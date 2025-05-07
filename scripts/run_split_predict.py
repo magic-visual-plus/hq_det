@@ -2,6 +2,7 @@ import sys
 from hq_det.models import dino
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
+from hq_det import split_utils
 import os
 import torch
 from hq_det import torch_utils
@@ -25,11 +26,12 @@ if __name__ == '__main__':
     for filename in tqdm(filenames):
         img = cv2.imread(filename)
 
-        results = model.predict([img], bgr=True, confidence=0.2, max_size=1024)
+        if '49fbab' in filename:
+            print('filename:', filename)
+            pass
 
-        result = results[0]
+        result = split_utils.predict_split(model, img, 0.2, 1024, 20, 2)
 
-        print(len(result.bboxes))
         for bbox in result.bboxes:
             img = cv2.rectangle(
                 img.copy(),

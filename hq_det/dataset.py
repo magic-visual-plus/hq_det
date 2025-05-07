@@ -173,7 +173,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
             pass
 
         target['img'] = img
-        target['cls'] = target['labels']
+        target['cls'] = target['labels'].numpy()
         target['bboxes'] = target['bboxes'].numpy()
         target['original_shape'] = (img.shape[0], img.shape[1])
         

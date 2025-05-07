@@ -36,4 +36,8 @@ class HQModel(torch.nn.Module):
     def save(self, path):
         pass
 
+    def to(self, device):
+        super(HQModel, self).to(device)
+        self.device = device
+
     pass

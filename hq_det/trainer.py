@@ -21,12 +21,14 @@ class HQTrainerArguments(pydantic.BaseModel):
     lr_min: float = 1e-6
     batch_size: int = 4
     device: str = 'cuda:0'
-    checkpoint_path: str = 'checkpoints'
+    checkpoint_path: str = 'output'
+    output_path: str = 'output'
     checkpoint_interval: int = 10
     model_argument: dict = {}
     image_size: int = 640
     
     class_id2names: dict = None
+    eval_class_names: list = None
     pass
 
 
@@ -122,13 +124,13 @@ class HQTrainer:
             transforms.append(augment.RandomVerticalFlip())
             transforms.append(augment.RandomGrayScale())
             transforms.append(augment.RandomShuffleChannel())
-            # transforms.append(augment.RandomRotate())
-            # transforms.append(augment.RandomAffine())
-            # transforms.append(augment.RandomPerspective())
-            # transforms.append(augment.RandomNoise())
-            # transforms.append(augment.RandomBrightness())
-            # transforms.append(augment.RandomCrop())
-            # transforms.append(augment.RandomResize())
+            transforms.append(augment.RandomRotate(p=0.1))
+            transforms.append(augment.RandomAffine(p=0.1))
+            transforms.append(augment.RandomPerspective(p=0.1))
+            transforms.append(augment.RandomNoise(p=0.1))
+            transforms.append(augment.RandomBrightness(p=0.1))
+            transforms.append(augment.RandomCrop(p=0.1))
+            transforms.append(augment.RandomResize(p=0.1))
             pass
         else:
             pass
@@ -169,6 +171,14 @@ class HQTrainer:
             self.args.class_id2names = dataset_train.class_id2names
             pass
 
+        if self.args.eval_class_names is None:
+            eval_class_ids = dataset_train.class_id2names.keys()
+        else:
+            class_names2id = {v: k for k, v in self.args.class_id2names.items()}
+            eval_class_ids = [
+                class_names2id[class_name] for class_name in self.args.eval_class_names if class_name in class_names2id]
+            pass
+
         model = self.build_model()
 
         dataloader_train = torch.utils.data.DataLoader(
@@ -182,6 +192,7 @@ class HQTrainer:
         os.makedirs(self.args.checkpoint_path, exist_ok=True)
 
         model.to(device)
+        train_info = dict()
         for i_epoch in range(num_epoches + warmup_epochs):
             # Training process
             train_losses = []
@@ -207,6 +218,7 @@ class HQTrainer:
                 bar.set_postfix(
                     **info
                 )
+                train_info = add_stats(train_info, info)
                 # Backward pass
                 optimizer.zero_grad()
                 loss.backward()
@@ -214,11 +226,11 @@ class HQTrainer:
                 optimizer.step()
 
                 pass
-
+            
             # Validation process
             model.eval()
             val_losses = []
-            info = dict()
+            val_info = dict()
             gt_records = []
             pred_records = []
             num_images = 0
@@ -235,7 +247,7 @@ class HQTrainer:
                         pred.image_id = image_id
                         pass
 
-                    info = add_stats(info, info_)
+                    val_info = add_stats(val_info, info_)
                     val_losses.append(loss.item())
                     # calculate averge iou
                     pass
@@ -244,15 +256,25 @@ class HQTrainer:
                 gt_records.extend(extract_ground_truth(batch_data))
                 pass
             
-            info = divide_stats(info, len(dataloader_val))
+            train_info = divide_stats(train_info, len(dataloader_train))
+            val_info = divide_stats(val_info, len(dataloader_val))
 
             # Evaluate the model
-            stat = evaluate.eval_detection_result(
-                gt_records, pred_records, model.get_class_names())
+            # stat = evaluate.eval_detection_result(
+            #     gt_records, pred_records, model.get_class_names())
+
+            stat = evaluate.eval_detection_result_by_class_id(
+                gt_records, pred_records, eval_class_ids)
             
+            for loss_name in ['box', 'cls', 'giou']:
+                stat[f'train/{loss_name}_loss'] = train_info[f'{loss_name}']
+                stat[f'val/{loss_name}_loss'] = val_info[f'{loss_name}']
+                pass
+            
+            self.save_epoch_result(i_epoch, stat, self.args.output_path)
             self.logger.info(
                 f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, train loss: {np.mean(train_losses)}, validation loss: {np.mean(val_losses)}, '
-                f'{format_stats(info)}'
+                f'{format_stats(val_info)}'
             )
 
             if i_epoch >= warmup_epochs:
@@ -267,5 +289,36 @@ class HQTrainer:
             pass
         pass
 
+    
+    def save_epoch_result(self, iepoch, stat, output_path):
+        header = ['mAP', 'precision', 'recall', 'f1_score', 'fnr', 'confidence', 'train/box_loss', 'train/cls_loss', 'train/giou_loss', 'val/box_loss', 'val/cls_loss', 'val/giou_loss']
+        results_file = os.path.join(output_path, 'results.csv')
+        if iepoch == 0:
+            # add header
+            with open(results_file, 'w') as f:
+                f.write(','.join(header) + '\n')
+                pass
+            pass
 
+        with open(results_file, 'a') as f:
+            values = [stat[colname] for colname in header if colname in stat]
+            f.write(','.join([str(v) for v in values]) + '\n')
+            pass
+
+        # save curve
+        plots_path = os.path.join(output_path, 'plots', f'epoch{iepoch}')
+        os.makedirs(plots_path, exist_ok=True)
+        curve_file = os.path.join(plots_path, 'pr_curve.csv')
+        
+        precisions = stat['precisions']
+        recalls = stat['recalls']
+
+        with open(curve_file, 'w') as f:
+            f.write('px,all\n')
+
+            for i in range(len(precisions)):
+                f.write(f'{recalls[i]},{precisions[i]}\n')
+                pass
+            pass
+        pass
     pass

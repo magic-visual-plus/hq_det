@@ -66,27 +66,31 @@ class MyTrainer(HQTrainer):
         return dataset_train, dataset_val
     
     def build_scheduler(self, optimizer):
-        gamma = (self.args.lr_min / self.args.lr0) ** (1.0 / self.args.num_epoches)
-        return torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
+        return torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
+            end_factor=self.args.lr_min / self.args.lr0
+        )
 
 
 
-if __name__ == '__main__':
+def run(data_path, output_path, num_epoches, lr0, load_checkpoint):
     trainer = MyTrainer(
         HQTrainerArguments(
-            data_path=sys.argv[1],
-            num_epoches=50,
+            data_path=data_path,
+            num_epoches=num_epoches,
             warmup_epochs=0,
             num_data_workers=12,
-            lr0=1e-4,
+            lr0=lr0,
             lr_min=1e-6,
             batch_size=4,
             device='cuda:0',
+            checkpoint_path=output_path,
+            output_path=output_path,
             checkpoint_interval=-1,
             image_size=1024,
             model_argument={
-                "model": sys.argv[2],
-            }
+                "model": load_checkpoint,
+            },
         )
     )
     trainer.run()

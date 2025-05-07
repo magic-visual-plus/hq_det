@@ -80,12 +80,12 @@ class MyTrainer(HQTrainer):
         return dataset_train, dataset_val
     
     def build_scheduler(self, optimizer):
-        gamma = (self.args.lr_min / self.args.lr0) ** (1.0 / self.args.num_epoches)
-        return torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
-        # return torch.optim.lr_scheduler.LinearLR(
-        #     optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
-        #     end_factor=self.args.lr_min / self.args.lr0
-        # )
+        # gamma = (self.args.lr_min / self.args.lr0) ** (1.0 / self.args.num_epoches)
+        # return torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
+        return torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
+            end_factor=self.args.lr_min / self.args.lr0
+        )
 
 
 
@@ -98,7 +98,7 @@ if __name__ == '__main__':
             num_data_workers=8,
             lr0=1e-4,
             lr_min=1e-6,
-            batch_size=8,
+            batch_size=6,
             device='cuda:0',
             checkpoint_interval=-1,
             image_size=1024,

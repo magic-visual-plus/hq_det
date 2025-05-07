@@ -6,6 +6,9 @@ from .base import HQModel
 import numpy as np
 from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
+import cv2
+from typing import List
+from .. import torch_utils
 
 
 class HQDINO(HQModel):
@@ -72,6 +75,10 @@ class HQDINO(HQModel):
             record = PredictionResult()
             mask = pred.scores > confidence
             if not mask.any():
+                # no pred
+                record.bboxes = np.zeros((0, 4), dtype=np.float32)
+                record.scores = np.zeros((0,), dtype=np.float32)
+                record.cls = np.zeros((0,), dtype=np.int32)
                 pass
             else:
                 # add pred
@@ -98,7 +105,7 @@ class HQDINO(HQModel):
             img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
             batch_data['inputs'].append(img)
             data_sample = DetDataSample(metainfo={
-                'img_shape': (img.shape[0], img.shape[1]),
+                'img_shape': (img.shape[1], img.shape[2]),
             })
 
             gt_instance = InstanceData()
@@ -110,13 +117,43 @@ class HQDINO(HQModel):
         return batch_data
         pass
 
-    def predict(self, imgs):
+    def predict(self, imgs, bgr=False, confidence=0.0, max_size=-1, device='cpu') -> List[PredictionResult]:
+        if not bgr:
+            # Convert BGR to RGB
+            for i in range(len(imgs)):
+                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
+                pass
+            pass
+
+        img_scales = np.ones((len(imgs),))
+        if max_size > 0:
+            for i in range(len(imgs)):
+                max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
+                if max_hw > max_size:
+                    rate = max_size / max_hw
+                    imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
+                    img_scales[i] = rate
+                    pass
+                pass
+            pass
+
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
+            batch_data = torch_utils.batch_to_device(batch_data, device)
             forward_result = self.forward(batch_data)
-            preds = self.postprocess(forward_result, batch_data)
+            preds = self.postprocess(forward_result, batch_data, confidence)
+            torch.cuda.empty_cache()
             pass
         
+        for i in range(len(preds)):
+            pred = preds[i]
+            pred.bboxes = pred.bboxes / img_scales[i]
+            # pred.bboxes[:, 0] = np.clip(pred.bboxes[:, 0], 0, imgs[i].shape[1])
+            # pred.bboxes[:, 1] = np.clip(pred.bboxes[:, 1], 0, imgs[i].shape[0])
+            # pred.bboxes[:, 2] = np.clip(pred.bboxes[:, 2], 0, imgs[i].shape[1])
+            # pred.bboxes[:, 3] = np.clip(pred.bboxes[:, 3], 0, imgs[i].shape[0])
+            pass
+
         return preds
 
     def compute_loss(self, batch_data, forward_result):
@@ -134,16 +171,16 @@ class HQDINO(HQModel):
             info = {
                 'loss': loss.item(),
                 'cls': info['loss_cls'].item(),
-                'bbox': info['loss_bbox'].item(),
-                'iou': info['loss_iou'].item(),
+                'box': info['loss_bbox'].item(),
+                'giou': info['loss_iou'].item(),
             }
         else:
             loss = torch.tensor(0.0, device=head_inputs_dict['hidden_states'].device)
             info = {
                 'loss': 0.0,
                 'cls': 0.0,
-                'bbox': 0.0,
-                'iou': 0.0,
+                'box': 0.0,
+                'giou': 0.0,
             }
             pass
         return loss, info

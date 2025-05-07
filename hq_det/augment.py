@@ -448,9 +448,6 @@ class Resize:
         img = data['img']
         bboxes = data['bboxes']
 
-        if isinstance(img, Image.Image):
-            img = np.array(img)
-            pass
         h, w = img.shape[:2]
 
         max_hw = max(h, w)
@@ -464,7 +461,7 @@ class Resize:
             new_h, new_w = h, w
             pass
 
-        data['img'] = img
+        data['img'] = img.copy()
         data['bboxes'] = bboxes
 
         return data

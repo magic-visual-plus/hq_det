@@ -129,6 +129,62 @@ def unnormalize(boxes, width, height):
 
     return boxes_
 
+
+def iou_xyxy(box1, box2):
+    x1 = np.maximum(box1[0], box2[:, 0])
+    y1 = np.maximum(box1[1], box2[:, 1])
+    x2 = np.minimum(box1[2], box2[:, 2])
+    y2 = np.minimum(box1[3], box2[:, 3])
+    w = np.maximum(0, x2 - x1)
+    h = np.maximum(0, y2 - y1)
+    intersection = w * h
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[:, 2] - box2[:, 0]) * (box2[:, 3] - box2[:, 1])
+    union = area1 + area2 - intersection
+    iou = intersection / union
+    return iou
+
+
+def nms(boxes, cls, scores):
+    # non_max_suppression
+
+    # boxes: (N, 4)
+    # cls: (N, )
+    # scores: (N, )
+    # return: (N, 4)
+
+    # first, sort by scores
+    indices = np.argsort(scores)[::-1]
+    boxes = boxes[indices]
+    cls = cls[indices]
+    scores = scores[indices]
+    keep = []
+
+    iou_thr = 0.5
+    while len(boxes) > 0:
+        # get the first box
+        box = boxes[0]
+        keep.append(indices[0])
+
+        # calculate the iou of the first box with the rest
+        iou = iou_xyxy(box, boxes[1:])
+        # remove the boxes with iou > 0.5 and sample cls
+        mask = np.logical_not((iou > iou_thr) & (cls[0] == cls[1:]))
+
+        if mask.sum() == 0:
+            # no more boxes to keep
+            break
+
+        boxes = boxes[1:][mask]
+        cls = cls[1:][mask]
+        scores = scores[1:][mask]
+        indices = indices[1:][mask]
+        pass
+
+    return keep
+    pass
+
+
     
 
 

@@ -3,10 +3,15 @@ import numpy as np
 import os
 import json
 from collections import defaultdict
+from hq_det import common
 from tqdm import tqdm
 import shutil
 from .models import base
+from . import box_utils
 
+
+def get_split_max_size(img, stride=1024, shift=20, max_split=3):
+    return stride * max_split - (max_split - 1) * shift
 
 def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
     splits = []
@@ -185,29 +190,90 @@ def split_coco(input_path, output_path, stride, shift, max_split):
     pass
 
 
-def predict_split(model: base.HQModel, img, thr, stride, shift, max_split):
-    boxes = np.zeros((0, 4), dtype=np.float32)
-    cls = np.zeros((0,), dtype=np.int64)
+def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=False, gt_boxes=None, gt_cls=None):
+
+    if gt_boxes is not None and gt_cls is not None:
+        boxes = gt_boxes
+        cls = gt_cls
+    else:
+        boxes = np.zeros((0, 4), dtype=np.float32)
+        cls = np.zeros((0,), dtype=np.int64)
+        pass
+
     splits = split_image(img, boxes, cls, stride, shift, max_split)
     results = []
     
     imgs = [s[0] for s in splits]
-    results = model.predict(imgs)
+    results = model.predict(imgs, bgr=bgr)
     
     # merge results
     total_boxes = []
+    total_cls = []
+    total_scores = []
+
+    split_max_size = get_split_max_size(img, stride, shift, max_split)
+
+    # if len(splits) > 1:
+    #     print('Splitting image into {} parts'.format(len(splits)))
+    #     pass
+
     for i, (sub_img, sub_boxes, sub_cls, startx, starty) in enumerate(splits):
-        if len(results[i].bboxes) == 0:
-            continue
+        # if len(results[i].bboxes) == 0:
+        #     continue
 
         boxes = results[i].bboxes
         cls = results[i].cls
         scores = results[i].scores
 
+        # boxes = sub_boxes.copy()
+        # cls = sub_cls.copy()
+        # scores = np.ones(len(boxes), dtype=np.float32)
+
         mask = scores > thr
         boxes = boxes[mask]
         cls = cls[mask]
         scores = scores[mask]
-        
-        
+
+        if i == 0:
+            if True:
+            # if len(splits) == 1:
+                rate = max(sub_img.shape[0], sub_img.shape[1]) / max(img.shape[0], img.shape[1])
+                boxes = boxes / rate
+                
+                total_boxes.append(boxes)
+                total_cls.append(cls)
+                total_scores.append(scores)
+                pass
+            pass
+        else:
+            rate = max(img.shape[0], img.shape[1]) / split_max_size
+            boxes = boxes * rate
+            startx = int(startx * rate)
+            starty = int(starty * rate)
+            boxes_origin = boxes.copy()
+            boxes_origin[:, 0] += startx
+            boxes_origin[:, 1] += starty
+            boxes_origin[:, 2] += startx
+            boxes_origin[:, 3] += starty
+            boxes_origin[:, 0] = np.clip(boxes_origin[:, 0], 0, img.shape[1])
+            boxes_origin[:, 1] = np.clip(boxes_origin[:, 1], 0, img.shape[0])
+            boxes_origin[:, 2] = np.clip(boxes_origin[:, 2], 0, img.shape[1])
+            boxes_origin[:, 3] = np.clip(boxes_origin[:, 3], 0, img.shape[0])
+            total_boxes.append(boxes_origin)
+            total_cls.append(cls)
+            total_scores.append(scores)
+            pass
         pass
+
+    pred = common.PredictionResult()
+    pred.bboxes = np.concatenate(total_boxes, axis=0)
+    pred.cls = np.concatenate(total_cls, axis=0)
+    pred.scores = np.concatenate(total_scores, axis=0)
+
+    keep_index = box_utils.nms(pred.bboxes, pred.cls, pred.scores)
+    pred.bboxes = pred.bboxes[keep_index]
+    pred.cls = pred.cls[keep_index]
+    pred.scores = pred.scores[keep_index]
+
+    
+    return pred

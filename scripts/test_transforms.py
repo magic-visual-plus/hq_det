@@ -12,16 +12,16 @@ if __name__ == '__main__':
 
     transforms = [
         augment.ToNumpy(),
-        augment.RandomHorizontalFlip(),
-        augment.RandomVerticalFlip(),
-        augment.RandomGrayScale(),
-        augment.RandomShuffleChannel(),
-        augment.RandomAffine(),
-        augment.RandomPerspective(),
-        augment.RandomNoise(),
-        augment.RandomBrightness(),
-        # augment.RandomCrop(),
-        augment.RandomResize(),
+        # augment.RandomHorizontalFlip(),
+        # augment.RandomVerticalFlip(),
+        # augment.RandomGrayScale(),
+        # augment.RandomShuffleChannel(),
+        # augment.RandomAffine(),
+        # augment.RandomPerspective(),
+        # augment.RandomNoise(),
+        # augment.RandomBrightness(),
+        augment.RandomCrop(p=1.0),
+        augment.RandomResize(p=1.0),
     ]
     transforms = augment.Compose(transforms)
 
