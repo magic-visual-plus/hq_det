@@ -7,16 +7,6 @@ from pycocotools import mask as coco_mask
 import loguru
 import numpy as np
 import copy
-from ultralytics.data.augment import (
-    Compose,
-    Format,
-    Instances,
-    LetterBox,
-    RandomLoadText,
-    classify_augmentations,
-    classify_transforms,
-    v8_transforms,
-)
 
 from ultralytics.utils import DEFAULT_CFG
 from PIL import Image
