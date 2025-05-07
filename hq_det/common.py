@@ -5,7 +5,10 @@ from . import box_utils
 
 
 class PredictionResult(pydantic.BaseModel):
-    model_config  = pydantic.ConfigDict(arbitrary_types_allowed=True)
+    # model_config  = pydantic.ConfigDict(arbitrary_types_allowed=True)
+    class Config:
+        arbitrary_types_allowed = True
+        pass
     image_id: int = None
     bboxes: np.ndarray = None
     scores: np.ndarray = None
