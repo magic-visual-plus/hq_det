@@ -241,7 +241,7 @@ class RandomCrop:
             y2 = random.randint(y1 + int(h * self.min_size), h)
 
             # crop
-            img = img[y1:y2, x1:x2]
+            img = img[y1:y2, x1:x2].copy()
 
             # remove boxes outside the crop
             mask = (bboxes[:, 0] < x2) & (bboxes[:, 2] > x1) & (bboxes[:, 1] < y2) & (bboxes[:, 3] > y1)
@@ -531,6 +531,7 @@ class Format:
         data['bboxes_xyxy'] = bboxes_xyxy
         data['bboxes_cxcywh_norm'] = bboxes_cxcywh_norm
         data['bboxes'] = bboxes_xyxy
+        data['cls'] = torch.from_numpy(data['cls']).long()
         data['img'] = img
         data['batch_idx'] = torch.zeros((bboxes.shape[0],), dtype=torch.int64)
         return data
