@@ -86,7 +86,7 @@ def eval_detection_result_by_class_id(
     coco_pred.dataset['annotations'] = prediction_result_list_to_coco(pred_records, class_ids)
     coco_pred.dataset['categories'] = [{'id': 0, 'name': 'ng'}]
     coco_pred.dataset['images'] = [{'id': rec.image_id} for rec in pred_records]
-
+    coco_pred.createIndex()
 
     # Initialize COCO evaluation object
     coco_eval = COCOeval(coco_gt, coco_pred, 'bbox')
@@ -99,7 +99,7 @@ def eval_detection_result_by_class_id(
     map = coco_eval.stats[0]  # mAP at IoU=0.5:0.95
     precisions = np.clip(coco_eval.eval['precision'][0, :, 0, 0, 2], 0, 1)
     recalls = coco_eval.params.recThrs
-    f1s = 2 * (precisions * recalls) / (precisions + recalls)
+    f1s = 2 * (precisions * recalls) / (precisions + recalls + 1e-6)
 
     best_idx = np.argmax(f1s)
     best_f1 = f1s[best_idx]

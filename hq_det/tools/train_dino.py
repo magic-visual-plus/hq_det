@@ -73,7 +73,7 @@ class MyTrainer(HQTrainer):
 
 
 
-def run(data_path, output_path, num_epoches, lr0, load_checkpoint):
+def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -91,6 +91,7 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint):
             model_argument={
                 "model": load_checkpoint,
             },
+            eval_class_names=eval_class_names,
         )
     )
     trainer.run()

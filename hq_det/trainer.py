@@ -172,7 +172,7 @@ class HQTrainer:
             pass
 
         if self.args.eval_class_names is None:
-            eval_class_ids = dataset_train.class_id2names.keys()
+            eval_class_ids = list(dataset_train.class_id2names.keys())
         else:
             class_names2id = {v: k for k, v in self.args.class_id2names.items()}
             eval_class_ids = [
