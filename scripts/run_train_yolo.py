@@ -28,8 +28,10 @@ class MyTrainer(HQTrainer):
             h, w = b["img"].shape[1:]
             max_h = max(max_h, h)
             max_w = max(max_w, w)
-            pass
-        
+            
+        max_h = round(max_h / 32) * 32
+        max_w = round(max_w / 32) * 32
+
         for b in batch:
             b['img'], b['bboxes_cxcywh_norm'] = torch_utils.pad_image(b['img'], b['bboxes_cxcywh_norm'], (max_h, max_w))
             pass
