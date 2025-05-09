@@ -88,7 +88,7 @@ class HQYOLO(torch.nn.Module):
         info = {
             'box': loss_item[0].item(),
             'cls': loss_item[1].item(),
-            'dfl': loss_item[2].item(),
+            'iou': loss_item[2].item(),
         }
         
         return loss.sum(), info

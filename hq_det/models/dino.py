@@ -119,9 +119,9 @@ class HQDINO(HQModel):
 
     def predict(self, imgs, bgr=False, confidence=0.0, max_size=-1, device='cpu') -> List[PredictionResult]:
         if not bgr:
-            # Convert BGR to RGB
+            # Convert RGB to BGR
             for i in range(len(imgs)):
-                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
+                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_RGB2BGR)
                 pass
             pass
 

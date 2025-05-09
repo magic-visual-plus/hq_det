@@ -4,23 +4,36 @@ from ...common import PredictionResult
 import numpy as np
 import os
 from .core import YAMLConfig
+from typing import List
+import cv2
+from ... import torch_utils
+import torchvision.transforms.functional as VF
+
 
 class HQRTDETR(torch.nn.Module):
-    def __init__(self, class_id2names, **kwargs):
+    def __init__(self, class_id2names=None, **kwargs):
         super(HQRTDETR, self).__init__()
-        self.id2names = class_id2names
+
+        if class_id2names is None:
+            data = torch.load(kwargs['model'], map_location='cpu')
+            self.id2names = data['id2names']
+        else:
+            self.id2names = class_id2names
+            pass
+
         current_module_path = __file__
         config_path = os.path.join(
             os.path.dirname(current_module_path), 'configs', 'rtdetrv2', 'rtdetrv2_r50vd_m_7x_coco.yml')
         
         cfg = YAMLConfig(config_path)
-        cfg.yaml_cfg['num_classes'] = len(class_id2names)
+        cfg.yaml_cfg['num_classes'] = len(self.id2names)
         cfg.yaml_cfg['remap_mscoco_category'] = False
         cfg.yaml_cfg['eval_spatial_size'] = [1024, 1024]
         self.model = cfg.model
         self.criterion = cfg.criterion
         self.postprocessor = cfg.postprocessor
         self.load_model(kwargs['model'])
+        self.device = 'cpu'
 
     def get_class_names(self):
         # Get the class names from the model
@@ -69,7 +82,7 @@ class HQRTDETR(torch.nn.Module):
 
         results = []
 
-        for pred in preds:
+        for i, pred in enumerate(preds):
             record = PredictionResult()
             if len(pred['labels']) == 0:
                 pass
@@ -81,14 +94,78 @@ class HQRTDETR(torch.nn.Module):
                 record.bboxes = pred_bboxes
                 record.cls = pred_cls
                 record.scores = pred_scores
-                record.image_id = batch_data['image_id']
+                record.image_id = batch_data['targets'][i]['image_id']
                 pass
             results.append(record)
             pass
         return results
-        
+
+
+    def imgs_to_batch(self, imgs):
+        # Convert a list of images to a batch
+
+        # find max size of imgs
+        max_h, max_w = 1024, 1024
+
+        new_imgs = []
+        for img in imgs:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = VF.to_tensor(img)
+            img, _ = torch_utils.pad_image(img, torch.zeros((0, 4)), (max_h, max_w))
+            new_imgs.append(img)
+            pass
+
+        new_imgs = torch.stack(new_imgs, 0)
+
+        targets = [
+            {
+                "boxes": np.zeros((0, 4), dtype=np.float32),
+                "labels": np.zeros((0,), dtype=np.int32),
+                "image_id": 0,
+            }
+            for _ in range(len(imgs))
+        ]
+
+        return {
+            "img": new_imgs,
+            "targets": targets,
+        }
+        pass
     
-    def predict(self, batch_data):
+    def predict(self, imgs: List[np.ndarray], bgr=False, confidence=0.0, max_size=-1) -> List[PredictionResult]:
+        if not bgr:
+            for i in range(len(imgs)):
+                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_RGB2BGR)
+                pass
+            pass
+
+        img_scales = np.ones((len(imgs),))
+        if max_size > 0:
+            for i in range(len(imgs)):
+                max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
+                if max_hw > max_size:
+                    rate = max_size / max_hw
+                    imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
+                    img_scales[i] = rate
+                    pass
+                pass
+            pass
+
+        with torch.no_grad():
+            batch_data = self.imgs_to_batch(imgs)
+            batch_data = torch_utils.batch_to_device(batch_data, self.device)
+            forward_result = self.forward(batch_data)
+            preds = self.postprocess(forward_result, batch_data, confidence)
+            torch.cuda.empty_cache()
+            pass
+        
+        for i in range(len(preds)):
+            pred = preds[i]
+            pred.bboxes = pred.bboxes / img_scales[i]
+            pass
+
+        return preds
+
         pass
 
     def compute_loss(self, batch_data, forward_result):
@@ -101,7 +178,11 @@ class HQRTDETR(torch.nn.Module):
             loss_dict = self.criterion(forward_result, target)
 
             loss = sum(loss_dict.values())
-            info = {k: loss_dict['loss_' + k].item() for k in ['vfl', 'bbox', 'giou']}
+            info = {
+                'box': loss_dict['loss_bbox'].item(),
+                'giou': loss_dict['loss_giou'].item(),
+                'cls': loss_dict['loss_vfl'].item(),
+            }
         else:
             loss = torch.tensor(0.0, device=forward_result.device)
             info = {
@@ -118,8 +199,14 @@ class HQRTDETR(torch.nn.Module):
             {
                 'ema': {
                     'module': self.model.state_dict()
-                }
+                },
+                'id2names': self.id2names,
             }, path + '.pth')
         pass
+
+
+    def to(self, device):
+        super(HQRTDETR, self).to(device)
+        self.device = device
 
     pass
