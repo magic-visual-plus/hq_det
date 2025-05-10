@@ -160,7 +160,8 @@ def nms(boxes, cls, scores):
     scores = scores[indices]
     keep = []
 
-    iou_thr = 0.5
+    iou_thr_different_cls= 0.6
+    iou_thr_same_cls = 0.5
     while len(boxes) > 0:
         # get the first box
         box = boxes[0]
@@ -168,8 +169,11 @@ def nms(boxes, cls, scores):
 
         # calculate the iou of the first box with the rest
         iou = iou_xyxy(box, boxes[1:])
-        # remove the boxes with iou > 0.5 and sample cls
-        mask = np.logical_not((iou > iou_thr) & (cls[0] == cls[1:]))
+
+        mask = (iou > iou_thr_same_cls) & (cls[0] == cls[1:])
+        mask = mask | ((iou > iou_thr_different_cls) & (cls[0] != cls[1:]))
+
+        mask = np.logical_not(mask)
 
         if mask.sum() == 0:
             # no more boxes to keep

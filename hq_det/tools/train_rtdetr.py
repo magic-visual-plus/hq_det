@@ -24,12 +24,7 @@ class MyTrainer(HQTrainer):
     
     def collate_fn(self, batch):
 
-        max_h, max_w = 0, 0
-        for b in batch:
-            h, w = b["img"].shape[1:]
-            max_h = max(max_h, h)
-            max_w = max(max_w, w)
-            pass
+        max_h, max_w = self.args.image_size, self.args.image_size
         
         for b in batch:
             b['img'], b['bboxes_cxcywh_norm'] = torch_utils.pad_image(b['img'], b['bboxes_cxcywh_norm'], (max_h, max_w))

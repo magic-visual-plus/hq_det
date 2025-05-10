@@ -11,7 +11,9 @@ from . import box_utils
 
 
 def get_split_max_size(img, stride=1024, shift=20, max_split=3):
-    return stride * max_split - (max_split - 1) * shift
+    max_size = stride * max_split - (max_split - 1) * shift
+    max_hw = max(img.shape[0], img.shape[1])
+    return min(max_size, max_hw)
 
 def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
     splits = []

@@ -33,6 +33,7 @@ class HQRTDETR(torch.nn.Module):
         self.criterion = cfg.criterion
         self.postprocessor = cfg.postprocessor
         self.load_model(kwargs['model'])
+        self.image_size = kwargs.get('image_size', 1024)
         self.device = 'cpu'
 
     def get_class_names(self):
@@ -105,7 +106,7 @@ class HQRTDETR(torch.nn.Module):
         # Convert a list of images to a batch
 
         # find max size of imgs
-        max_h, max_w = 1024, 1024
+        max_h, max_w = self.image_size, self.image_size
 
         new_imgs = []
         for img in imgs:
@@ -138,7 +139,8 @@ class HQRTDETR(torch.nn.Module):
                 imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_RGB2BGR)
                 pass
             pass
-
+        
+        max_size = self.image_size
         img_scales = np.ones((len(imgs),))
         if max_size > 0:
             for i in range(len(imgs)):
@@ -151,16 +153,25 @@ class HQRTDETR(torch.nn.Module):
                 pass
             pass
 
+        original_shapes = []
+        for img in imgs:
+            original_shapes.append(img.shape)
+            pass
+
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
             batch_data = torch_utils.batch_to_device(batch_data, self.device)
             forward_result = self.forward(batch_data)
             preds = self.postprocess(forward_result, batch_data, confidence)
-            torch.cuda.empty_cache()
             pass
         
+
         for i in range(len(preds)):
             pred = preds[i]
+            pred.bboxes[:, 0] = pred.bboxes[:, 0] / self.image_size * original_shapes[i][1]
+            pred.bboxes[:, 1] = pred.bboxes[:, 1] / self.image_size * original_shapes[i][0]
+            pred.bboxes[:, 2] = pred.bboxes[:, 2] / self.image_size * original_shapes[i][1]
+            pred.bboxes[:, 3] = pred.bboxes[:, 3] / self.image_size * original_shapes[i][0]
             pred.bboxes = pred.bboxes / img_scales[i]
             pass
 
