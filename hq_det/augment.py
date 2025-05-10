@@ -156,7 +156,7 @@ class RandomVerticalFlip:
         return data
     pass
 
-class RandomRotate:
+class RandomRotate90:
     def __init__(self, p=0.5):
         self.p = p
         self.transform = iaa.Rot90((1, 3))
@@ -184,6 +184,39 @@ class RandomRotate:
             pass
         return data
     pass
+
+
+class RandomRotate:
+    def __call__(self, p=0.5):
+        self.p = p
+        self.transform = iaa.Affine(rotate=(-10, 10))
+        pass
+
+    def __call__(self, data):
+        if random.random() <= self.p:
+            img = data['img']
+            bboxes = data['bboxes']
+
+            bbs = BoundingBoxesOnImage([
+                BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
+                for box in bboxes
+            ], shape=img.shape)
+            
+            image_aug, bbs_aug = self.transform(image=img, bounding_boxes=bbs)    
+
+            bboxes_ = np.zeros_like(bboxes)
+            for i, box in enumerate(bbs_aug.bounding_boxes):
+                bboxes_[i, 0] = box.x1
+                bboxes_[i, 1] = box.y1
+                bboxes_[i, 2] = box.x2
+                bboxes_[i, 3] = box.y2
+                pass
+
+            data['img'] = image_aug
+            data['bboxes'] = bboxes_
+            pass
+
+        return data
 
 class RandomAffine:
     def __init__(self, p=0.5):
