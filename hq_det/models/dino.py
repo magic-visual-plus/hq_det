@@ -25,6 +25,7 @@ class HQDINO(HQModel):
         dino_config.model['bbox_head']['num_classes'] = len(self.id2names)
         self.model = MODELS.build(dino_config.model)
         self.load_model(kwargs['model'])
+        self.device = 'cpu'
 
     def get_class_names(self):
         # Get the class names from the model
@@ -117,7 +118,7 @@ class HQDINO(HQModel):
         return batch_data
         pass
 
-    def predict(self, imgs, bgr=False, confidence=0.0, max_size=-1, device='cpu') -> List[PredictionResult]:
+    def predict(self, imgs, bgr=False, confidence=0.0, max_size=-1) -> List[PredictionResult]:
         if not bgr:
             # Convert RGB to BGR
             for i in range(len(imgs)):
@@ -136,13 +137,14 @@ class HQDINO(HQModel):
                     pass
                 pass
             pass
-
+        device = self.device
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
             batch_data = torch_utils.batch_to_device(batch_data, device)
-            forward_result = self.forward(batch_data)
-            preds = self.postprocess(forward_result, batch_data, confidence)
-            torch.cuda.empty_cache()
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
+                forward_result = self.forward(batch_data)
+                preds = self.postprocess(forward_result, batch_data, confidence)
+                pass
             pass
         
         for i in range(len(preds)):
@@ -202,4 +204,5 @@ class HQDINO(HQModel):
     def to(self, device):
         super(HQDINO, self).to(device)
         self.model.to(device)
+        self.device = torch.device(device)
     pass

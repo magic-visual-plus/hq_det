@@ -23,3 +23,6 @@ requires-python = ">=3.6"
 where = ["."]
 include = ["hq_det*"]
 exclude = ["tests"]
+
+[tools.setuptools.package-data]
+hq_det = ["**/*.yml"]

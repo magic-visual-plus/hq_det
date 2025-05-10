@@ -22,6 +22,9 @@ if __name__ == '__main__':
         load_checkpoint=sys.argv[2],
         eval_class_names=[
             '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', '烫伤', '爆针线', '破损', ' 碰伤', '线头', '脏污', '褶皱(贯穿)', '褶皱（轻度）', '褶皱（重度）', '重跳针'
-        ]
+        ],
+        batch_size=2,
+        image_size=1536,
+        gradient_update_interval=8,
     )
     pass
