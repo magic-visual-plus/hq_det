@@ -187,7 +187,7 @@ class RandomRotate90:
 
 
 class RandomRotate:
-    def __call__(self, p=0.5):
+    def __init__(self, p=0.5):
         self.p = p
         self.transform = iaa.Affine(rotate=(-10, 10))
         pass
@@ -201,7 +201,7 @@ class RandomRotate:
                 BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
                 for box in bboxes
             ], shape=img.shape)
-            
+
             image_aug, bbs_aug = self.transform(image=img, bounding_boxes=bbs)    
 
             bboxes_ = np.zeros_like(bboxes)

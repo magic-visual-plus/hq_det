@@ -124,6 +124,7 @@ class HQTrainer:
             transforms.append(augment.RandomVerticalFlip())
             transforms.append(augment.RandomGrayScale())
             transforms.append(augment.RandomShuffleChannel())
+            transforms.append(augment.RandomRotate90(p=0.1))
             transforms.append(augment.RandomRotate(p=0.1))
             transforms.append(augment.RandomAffine(p=0.1))
             transforms.append(augment.RandomPerspective(p=0.1))
