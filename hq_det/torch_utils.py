@@ -26,6 +26,18 @@ def batch_to_device(batch, device):
         return batch
 
 
+def nan_to_num(tensor, nan=0.0):
+    if isinstance(tensor, torch.Tensor):
+        return torch.nan_to_num(tensor, nan=nan)
+    elif isinstance(tensor, list):
+        return [nan_to_num(item, nan) for item in tensor]
+    elif isinstance(tensor, tuple):
+        return tuple(nan_to_num(item, nan) for item in tensor)
+    elif isinstance(tensor, dict):
+        return {key: nan_to_num(value, nan) for key, value in tensor.items()}
+    else:
+        return tensor
+
 def pad_image(img, bboxes, target_shape, pad_value=0.44):
     """
     Pad an image to the target shape with a specified padding value.

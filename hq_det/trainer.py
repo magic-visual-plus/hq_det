@@ -9,6 +9,7 @@ from . import evaluate
 from . import box_utils
 from .common import PredictionResult
 from tqdm import tqdm
+import torch
 
 
 class HQTrainerArguments(pydantic.BaseModel):
@@ -26,6 +27,8 @@ class HQTrainerArguments(pydantic.BaseModel):
     checkpoint_interval: int = 10
     model_argument: dict = {}
     image_size: int = 640
+    enable_amp: bool = False
+    gradient_update_interval: int = 1
     
     class_id2names: dict = None
     eval_class_names: list = None
@@ -189,6 +192,7 @@ class HQTrainer:
 
         optimizer = self.build_optimizer(model)
         scheduler = self.build_scheduler(optimizer)
+        scaler = torch.cuda.amp.GradScaler(enabled=self.args.enable_amp)
 
         os.makedirs(self.args.checkpoint_path, exist_ok=True)
 
@@ -210,10 +214,14 @@ class HQTrainer:
                 # print(batch_data['bboxes'])
                 batch_data = torch_utils.batch_to_device(batch_data, device)
                 
-                forward_result = model(batch_data)
-                # Compute loss
-                loss, info = model.compute_loss(batch_data, forward_result)
-                # calculate averge iou
+                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
+                    # Forward pass
+                    forward_result = model(batch_data)
+                    # Compute loss
+                    # forward_result = torch_utils.nan_to_num(forward_result)
+                    loss, info = model.compute_loss(batch_data, forward_result)
+                    # calculate averge iou
+                    pass
                 
                 train_losses.append(loss.item())
                 bar.set_postfix(
@@ -221,11 +229,16 @@ class HQTrainer:
                 )
                 train_info = add_stats(train_info, info)
                 # Backward pass
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-                optimizer.step()
 
+                scaler.scale(loss / self.args.gradient_update_interval).backward()
+                if i_batch % self.args.gradient_update_interval == 0:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad()
+                else:
+                    pass
                 pass
             
             # Validation process
