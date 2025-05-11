@@ -94,4 +94,3 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_na
         )
     )
     trainer.run()
-    pass
