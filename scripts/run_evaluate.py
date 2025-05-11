@@ -1,7 +1,8 @@
 
 
 import sys
-from hq_det.models import dino
+from hq_det.models import rtdetr
+from hq_det.models.dino import hq_dino
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
 from hq_det.common import PredictionResult
@@ -14,12 +15,14 @@ import cv2
 from tqdm import tqdm
 from hq_det import evaluate
 import numpy as np
+import time
 
 
 if __name__ == '__main__':
     input_path = sys.argv[2]
     
-    model = dino.HQDINO(model=sys.argv[1])
+    model = hq_dino.HQDINO(model=sys.argv[1])
+    # model = rtdetr.HQRTDETR(model=sys.argv[1])
     model.eval()
     
     model.to("cuda:0")
@@ -53,7 +56,9 @@ if __name__ == '__main__':
         gt_record.scores = np.ones(len(bboxes), dtype=np.float32)
         gts.append(gt_record)
         
-        results = model.predict([img], bgr=True, confidence=0.2, max_size=1024)
+        start = time.time()
+        results = model.predict([img], bgr=True, confidence=0.0, max_size=1536)
+        print('time:', time.time() - start)
         result = results[0]
         result.image_id = data['image_id']
 

@@ -1,14 +1,15 @@
 from mmdet.configs.dino import dino_4scale_r50_8xb2_12e_coco as dino_config
-from mmengine import MODELS
+from mmengine import MODELS, Config
 import torch.nn
-from ..common import PredictionResult
-from .base import HQModel
+from ...common import PredictionResult
+from ..base import HQModel
 import numpy as np
 from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
 import cv2
 from typing import List
-from .. import torch_utils
+from ... import torch_utils
+import os
 
 
 class HQDINO(HQModel):
@@ -22,6 +23,9 @@ class HQDINO(HQModel):
             self.id2names = class_id2names
             pass
 
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        dino_config_path = os.path.join(current_dir, 'configs', 'dino_4scale_r50_8xb2_12e_coco.py')
+        dino_config = Config.fromfile(dino_config_path)
         dino_config.model['bbox_head']['num_classes'] = len(self.id2names)
         self.model = MODELS.build(dino_config.model)
         self.load_model(kwargs['model'])

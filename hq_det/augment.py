@@ -429,7 +429,7 @@ class RandomPerspective:
 
 
 class FilterSmallBox:
-    def __init__(self, min_size=4):
+    def __init__(self, min_size=3):
         self.min_size = min_size
 
     def __call__(self, data):

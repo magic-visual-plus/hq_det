@@ -8,6 +8,7 @@ from typing import List
 import cv2
 from ... import torch_utils
 import torchvision.transforms.functional as VF
+import time
 
 
 class HQRTDETR(torch.nn.Module):
@@ -158,6 +159,7 @@ class HQRTDETR(torch.nn.Module):
             original_shapes.append(img.shape)
             pass
 
+        start = time.time()
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
             batch_data = torch_utils.batch_to_device(batch_data, self.device)
@@ -174,6 +176,8 @@ class HQRTDETR(torch.nn.Module):
             pred.bboxes[:, 3] = pred.bboxes[:, 3] / self.image_size * original_shapes[i][0]
             pred.bboxes = pred.bboxes / img_scales[i]
             pass
+
+        # print(f"predict time: {time.time() - start}")
 
         return preds
 

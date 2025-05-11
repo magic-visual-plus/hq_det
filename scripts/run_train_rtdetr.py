@@ -1,5 +1,5 @@
 import sys
-from hq_det.models import dino
+from hq_det.models.dino import hq_dino
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
 from hq_det import augment

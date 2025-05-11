@@ -1,7 +1,8 @@
 
 
 import sys
-from hq_det.models import dino
+from hq_det.models import rtdetr
+from hq_det.models.dino import hq_dino
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
 from hq_det.common import PredictionResult
@@ -20,7 +21,7 @@ import numpy as np
 if __name__ == '__main__':
     input_path = sys.argv[2]
     
-    model = dino.HQDINO(model=sys.argv[1])
+    model = rtdetr.HQRTDETR(model=sys.argv[1])
     model.eval()
     
     model.to("cuda:0")

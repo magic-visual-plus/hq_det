@@ -1,5 +1,5 @@
 import sys
-from hq_det.models import dino
+from hq_det.models.dino import hq_dino
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
 import os
@@ -13,7 +13,7 @@ if __name__ == '__main__':
     input_path = sys.argv[2]
     output_path = sys.argv[3]
     
-    model = dino.HQDINO(model=sys.argv[1])
+    model = hq_dino.HQDINO(model=sys.argv[1])
     model.eval()
     
     model.to("cuda:0")
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     for filename in tqdm(filenames):
         img = cv2.imread(filename)
 
-        results = model.predict([img], bgr=True, confidence=0.2, max_size=1024)
+        results = model.predict([img], bgr=True, confidence=0.3, max_size=1536)
 
         result = results[0]
 
