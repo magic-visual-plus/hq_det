@@ -1,5 +1,6 @@
 from mmdet.configs.rtmdet import rtmdet_l_8xb32_300e_coco as rtmdet_config
 from mmengine import MODELS
+from mmdet.models.utils import unpack_gt_instances
 import torch.nn
 from ..common import PredictionResult
 from .base import HQModel
@@ -9,6 +10,8 @@ from mmengine.structures import InstanceData
 import cv2
 from typing import List
 from .. import torch_utils
+from mmengine.config import ConfigDict
+
 
 
 class HQRTMDET(HQModel):
@@ -22,12 +25,12 @@ class HQRTMDET(HQModel):
             self.id2names = class_id2names
             pass
 
+        rtmdet_config.model['data_preprocessor']['pad_size_divisor'] = 32
         rtmdet_config.model['bbox_head']['num_classes'] = len(self.id2names)
         self.model = MODELS.build(rtmdet_config.model)
         self.load_model(kwargs['model'])
 
     def get_class_names(self):
-        # Get the class names from the model
         names = ['' for _ in range(len(self.id2names))]
         for k, v in self.id2names.items():
             names[k] = v
@@ -35,9 +38,7 @@ class HQRTMDET(HQModel):
         return names
 
     def load_model(self, path):
-        # Load the YOLO model using the specified path and device
         data = torch.load(path, map_location='cpu')
-        # Filter out keys that don't exist in the current model
         new_state_dict = {}
         for k, v in data['state_dict'].items():
             if k in self.model.state_dict() and data['state_dict'][k].shape == self.model.state_dict()[k].shape:
@@ -48,44 +49,42 @@ class HQRTMDET(HQModel):
 
     def forward(self, batch_data):
         batch_data = self.model.data_preprocessor(batch_data, self.training)
+
+        with open('batch_data_shape.txt', 'a+') as f:
+            f.write(str(batch_data['inputs'].shape))
         inputs = batch_data['inputs']
         data_samples = batch_data['data_samples']
         img_feats = self.model.extract_feat(inputs)
-        head_inputs_dict = self.model.forward_transformer(
-            img_feats, data_samples)
+        outputs = self.model.bbox_head.forward(img_feats)
         
         return {
             'img_feats': img_feats,
-            'head_inputs_dict': head_inputs_dict,
+            'outputs': outputs,
+            'data_samples': data_samples,
+            
         }
-        pass
     
     def preprocess(self, batch_data):
-        # Preprocess the input data for the YOLO model
         pass
 
+
     def postprocess(self, forward_result, batch_data, confidence=0.0):
-        # Post-process the predictions
-        head_inputs_dict = forward_result['head_inputs_dict']
-
-        preds = self.model.bbox_head.predict(
-            head_inputs_dict['hidden_states'],
-            head_inputs_dict['references'],
-            batch_data_samples = batch_data['data_samples'],
-            rescale=False)
-
+        batch_img_metas = [
+            data_samples.metainfo for data_samples in forward_result['data_samples']
+        ]
+        test_cfg = ConfigDict(**self.model.bbox_head.test_cfg)
+        predictions = self.model.bbox_head.predict_by_feat(
+            *forward_result['outputs'], batch_img_metas=batch_img_metas, rescale=False, cfg=test_cfg)
         results = []
-        for pred in preds:
+        for pred in predictions:
             record = PredictionResult()
             mask = pred.scores > confidence
             if not mask.any():
-                # no pred
                 record.bboxes = np.zeros((0, 4), dtype=np.float32)
                 record.scores = np.zeros((0,), dtype=np.float32)
                 record.cls = np.zeros((0,), dtype=np.int32)
                 pass
             else:
-                # add pred
                 pred_bboxes = pred.bboxes[mask].cpu().numpy()
                 pred_scores = pred.scores[mask].cpu().numpy()
                 pred_cls = pred.labels[mask].cpu().numpy().astype(np.int32)
@@ -98,8 +97,6 @@ class HQRTMDET(HQModel):
         
 
     def imgs_to_batch(self, imgs):
-        # Convert a list of images to a batch
-
         batch_data = {
             "inputs": [],
             "data_samples": [],
@@ -111,7 +108,6 @@ class HQRTMDET(HQModel):
             data_sample = DetDataSample(metainfo={
                 'img_shape': (img.shape[1], img.shape[2]),
             })
-
             gt_instance = InstanceData()
             data_sample.gt_instances = gt_instance
 
@@ -123,12 +119,11 @@ class HQRTMDET(HQModel):
 
     def predict(self, imgs, bgr=False, confidence=0.0, max_size=-1, device='cpu') -> List[PredictionResult]:
         if not bgr:
-            # Convert BGR to RGB
+            # 将BGR转换为RGB
             for i in range(len(imgs)):
                 imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
                 pass
             pass
-
         img_scales = np.ones((len(imgs),))
         if max_size > 0:
             for i in range(len(imgs)):
@@ -161,37 +156,23 @@ class HQRTMDET(HQModel):
         return preds
 
     def compute_loss(self, batch_data, forward_result):
-        # Compute the loss using the YOLO model
-        # This is a placeholder; actual implementation may vary
-        head_inputs_dict = forward_result['head_inputs_dict']
-        data_samples = batch_data['data_samples']
-        if self.model.training:
+        outputs = unpack_gt_instances(forward_result['data_samples'])
+        (batch_gt_instances, batch_gt_instances_ignore,
+            batch_img_metas) = outputs
 
-            losses = self.model.bbox_head.loss(
-                **head_inputs_dict, batch_data_samples=data_samples)
-            
-            loss, info = self.model.parse_losses(losses)
-
-            info = {
-                'loss': loss.item(),
-                'cls': info['loss_cls'].item(),
-                'box': info['loss_bbox'].item(),
-                'giou': info['loss_iou'].item(),
-            }
-        else:
-            loss = torch.tensor(0.0, device=head_inputs_dict['hidden_states'].device)
-            info = {
-                'loss': 0.0,
-                'cls': 0.0,
-                'box': 0.0,
-                'giou': 0.0,
-            }
-            pass
+        loss_inputs = forward_result['outputs'] + (batch_gt_instances, batch_img_metas,
+                                batch_gt_instances_ignore)
+        losses = self.model.bbox_head.loss_by_feat(*loss_inputs)
+        loss, info = self.model.parse_losses(losses)
+        info = {
+            'loss': loss.item(),
+            'cls': info['loss_cls'].item(),
+            'box': info['loss_bbox'].item(),
+            'giou': 0.0,
+        }
         return loss, info
 
     def save(self, path):
-        # Save the YOLO model to the specified path
-        
         torch.save(
             {
                 'state_dict': self.model.state_dict(),
