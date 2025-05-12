@@ -71,26 +71,3 @@ class MyTrainer(HQTrainer):
         )
 
 
-
-def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None):
-    trainer = MyTrainer(
-        HQTrainerArguments(
-            data_path=data_path,
-            num_epoches=num_epoches,
-            warmup_epochs=0,
-            num_data_workers=1,
-            lr0=lr0,
-            lr_min=1e-6,
-            batch_size=3,
-            device='cuda:0',
-            checkpoint_path=output_path,
-            output_path=output_path,
-            checkpoint_interval=-1,
-            image_size=320,
-            model_argument={
-                "model": load_checkpoint,
-            },
-            eval_class_names=eval_class_names,
-        )
-    )
-    trainer.run()

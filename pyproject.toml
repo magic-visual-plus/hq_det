@@ -21,7 +21,7 @@ requires-python = ">=3.6"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hq_det*"]
+include = ["hq_det*", "tools*"]
 exclude = ["tests"]
 
 [tools.setuptools.package-data]
