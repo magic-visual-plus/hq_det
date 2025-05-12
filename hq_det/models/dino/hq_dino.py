@@ -36,7 +36,7 @@ class HQDINO(HQModel):
         names = ['' for _ in range(len(self.id2names))]
         for k, v in self.id2names.items():
             names[k] = v
-            pass
+
         return names
 
     def load_model(self, path):
@@ -45,10 +45,10 @@ class HQDINO(HQModel):
         new_state_dict={k: v for k, v in data['state_dict'].items() if data['state_dict'][k].shape == self.model.state_dict()[k].shape}
         print(len(new_state_dict), len(data['state_dict']))
         self.model.load_state_dict(new_state_dict, strict=False)
-        pass
+
 
     def forward(self, batch_data):
-        batch_data = self.model.data_preprocessor(batch_data, self.training)
+        batch_data.update(self.model.data_preprocessor(batch_data, self.training))
         inputs = batch_data['inputs']
         data_samples = batch_data['data_samples']
         img_feats = self.model.extract_feat(inputs)
