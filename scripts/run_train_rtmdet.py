@@ -1,4 +1,4 @@
-from tools.logio import LogRedirector
+from hq_det.monitor.logio import LogRedirector
 
 
 def run_train_rtmdet(args, class_names):
