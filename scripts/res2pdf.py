@@ -5,20 +5,58 @@ import os
 import argparse
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.gridspec as gridspec
+from matplotlib import font_manager
+import matplotlib as mpl
 
 
 class TrainingVisualizer:
-    def __init__(self, input_file='output/results.csv', output_file='output/training_report.pdf'):
+    def __init__(self, input_file='output/results.csv', output_file='output/training_report.pdf', title=None, description=None):
         """Initialize the training visualizer with input and output file paths."""
         self.input_file = input_file
         self.output_file = output_file
         self.df = None
+        self.title = title or "Training Results"
+        self.description = description or ""
         
         # Ensure output directory exists
         if self.output_file and os.path.dirname(self.output_file):
             os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
+        
+        # Set up fonts for CJK characters
+        self._setup_fonts()
+        
         # Set style for better visualization
         sns.set_style("whitegrid")
+    
+    def _setup_fonts(self):
+        """Setup fonts that support CJK characters for matplotlib"""
+        # Try to find appropriate fonts in the system
+        font_paths = font_manager.findSystemFonts(fontpaths=None, fontext='ttf')
+        
+        # Look for fonts that support CJK characters
+        cjk_fonts = [p for p in font_paths if any(name in p.lower() for name in 
+                    ['simhei', 'heiti', 'microsoftyahei', 'noto', 'droid', 'source'])]
+        
+        if cjk_fonts:
+            # Use the first found CJK-supporting font
+            font_manager.fontManager.addfont(cjk_fonts[0])
+            font_name = font_manager.FontProperties(fname=cjk_fonts[0]).get_name()
+            plt.rcParams['font.family'] = ['sans-serif']
+            plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans'] + plt.rcParams['font.sans-serif']
+        else:
+            # Fallback to a generic sans-serif font
+            plt.rcParams['font.family'] = ['sans-serif']
+            
+        # Fix minus sign display issue
+        plt.rcParams['axes.unicode_minus'] = False
+        
+        # Set fallback fonts for CJK characters - using a different approach
+        # The 'font.fallback' parameter is not available in older matplotlib versions
+        try:
+            mpl.rcParams['font.fallback'] = ['Arial Unicode MS', 'DejaVu Sans']
+        except KeyError:
+            # For older matplotlib versions, just ensure we have good sans-serif fallbacks
+            plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'DejaVu Sans'] + plt.rcParams.get('font.sans-serif', [])
     
     def load_data(self):
         """Load data from CSV file."""
@@ -91,13 +129,21 @@ class TrainingVisualizer:
         """Create a summary page with key metrics"""
         plt.figure(figsize=(8.5, 11))
         plt.axis('off')
-        plt.text(0.5, 0.95, 'Training Results Summary', fontsize=16, ha='center')
+        plt.text(0.5, 0.95, self.title, fontsize=16, ha='center')
         plt.text(0.5, 0.9, f'Data source: {self.input_file}', fontsize=12, ha='center')
-        plt.text(0.1, 0.85, f'Final mAP: {self.df["mAP"].iloc[-1]:.4f}', fontsize=12)
-        plt.text(0.1, 0.82, f'Final F1 Score: {self.df["f1_score"].iloc[-1]:.4f}', fontsize=12)
-        plt.text(0.1, 0.79, f'Final Precision: {self.df["precision"].iloc[-1]:.4f}', fontsize=12)
-        plt.text(0.1, 0.76, f'Final Recall: {self.df["recall"].iloc[-1]:.4f}', fontsize=12)
-        plt.text(0.1, 0.73, f'Total Epochs: {len(self.df)}', fontsize=12)
+        
+        # Add description if provided
+        if self.description:
+            plt.text(0.5, 0.85, self.description, fontsize=12, ha='center', wrap=True)
+            start_y = 0.80
+        else:
+            start_y = 0.85
+            
+        plt.text(0.1, start_y, f'Final mAP: {self.df["mAP"].iloc[-1]:.4f}', fontsize=12)
+        plt.text(0.1, start_y-0.03, f'Final F1 Score: {self.df["f1_score"].iloc[-1]:.4f}', fontsize=12)
+        plt.text(0.1, start_y-0.06, f'Final Precision: {self.df["precision"].iloc[-1]:.4f}', fontsize=12)
+        plt.text(0.1, start_y-0.09, f'Final Recall: {self.df["recall"].iloc[-1]:.4f}', fontsize=12)
+        plt.text(0.1, start_y-0.12, f'Total Epochs: {len(self.df)}', fontsize=12)
         plt.tight_layout()
         pdf.savefig()
         plt.close()
@@ -124,6 +170,45 @@ class TrainingVisualizer:
         pdf.savefig()
         plt.close()
     
+    def create_data_table_page(self, pdf):
+        """Create a page with the data table"""
+        fig, ax = plt.subplots(figsize=(11, 8.5))
+        ax.axis('off')
+        
+        # Create a table with the data
+        # Select the most important columns to display
+        display_cols = ['mAP', 'precision', 'recall', 'f1_score', 
+                        'train/box_loss', 'train/cls_loss', 'train/giou_loss',
+                        'val/box_loss', 'val/cls_loss', 'val/giou_loss']
+        
+        # Add epoch column
+        table_data = self.df[display_cols].copy()
+        table_data.insert(0, 'epoch', self.df.index)
+        
+        # Format the data to 4 decimal places
+        for col in table_data.columns:
+            if col != 'epoch':
+                table_data[col] = table_data[col].map(lambda x: f'{x:.4f}')
+        
+        # Create the table
+        table = ax.table(
+            cellText=table_data.values,
+            colLabels=table_data.columns,
+            cellLoc='center',
+            loc='center',
+            colWidths=[0.08] * len(table_data.columns)
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(8)
+        table.scale(1, 1.5)
+        
+        plt.title('Training Data Table', fontsize=16)
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close()
+    
     def generate_report(self):
         """Generate the complete PDF report"""
         if not self.load_data():
@@ -134,6 +219,7 @@ class TrainingVisualizer:
                 self.create_summary_page(pdf)
                 self.create_metrics_and_losses_page(pdf)
                 self.create_all_losses_page(pdf)
+                self.create_data_table_page(pdf)
             
             print(f"Successfully generated PDF report: {self.output_file}")
             print(f"Final mAP: {self.df['mAP'].iloc[-1]:.4f}")
@@ -152,10 +238,14 @@ def main():
                         help='Path to the results CSV file')
     parser.add_argument('-o', '--output', type=str, default='output/training_report.pdf', 
                         help='Path to save output PDF report')
+    parser.add_argument('-t', '--title', type=str, default=None,
+                        help='Title for the report')
+    parser.add_argument('-d', '--description', type=str, default=None,
+                        help='Description or notes for the report')
     args = parser.parse_args()
     
     # Create visualizer and generate report
-    visualizer = TrainingVisualizer(args.input, args.output)
+    visualizer = TrainingVisualizer(args.input, args.output, args.title, args.description)
     visualizer.generate_report()
 
 
