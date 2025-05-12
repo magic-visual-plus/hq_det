@@ -46,26 +46,21 @@ class HQRTMDET(HQModel):
         print(f"Loaded {len(new_state_dict)}/{len(data['state_dict'])} parameters")
         self.model.load_state_dict(new_state_dict, strict=False)
 
-    def forward(self, batch_data: Dict) -> Dict:
-        batch_data = self.model.data_preprocessor(batch_data, self.training)
+    def forward(self, batch_data: Dict) -> Tuple:
+        batch_data.update(self.model.data_preprocessor(batch_data, self.training))
         inputs = batch_data['inputs']
-        data_samples = batch_data['data_samples']
         img_feats = self.model.extract_feat(inputs)
         outputs = self.model.bbox_head.forward(img_feats)
         
-        return {
-            # 'img_feats': img_feats,
-            'outputs': outputs,
-            'data_samples': data_samples,
-        }
+        return outputs
 
-    def postprocess(self, forward_result: Dict, batch_data: Dict, confidence: float = 0.0) -> List[PredictionResult]:
+    def postprocess(self, forward_result: Tuple, batch_data: Dict, confidence: float = 0.0) -> List[PredictionResult]:
         batch_img_metas = [
-            data_samples.metainfo for data_samples in forward_result['data_samples']
+            data_samples.metainfo for data_samples in batch_data['data_samples']
         ]
         test_cfg = ConfigDict(**self.model.bbox_head.test_cfg)
         predictions = self.model.bbox_head.predict_by_feat(
-            *forward_result['outputs'], batch_img_metas=batch_img_metas, rescale=False, cfg=test_cfg)
+            *forward_result, batch_img_metas=batch_img_metas, rescale=False, cfg=test_cfg)
         results = []
         for pred in predictions:
             record = PredictionResult()
@@ -132,11 +127,11 @@ class HQRTMDET(HQModel):
 
         return preds
 
-    def compute_loss(self, batch_data: Dict, forward_result: Dict) -> Tuple[torch.FloatTensor, Dict]:
-        outputs = unpack_gt_instances(forward_result['data_samples'])
+    def compute_loss(self, batch_data: Dict, forward_result: Tuple) -> Tuple[torch.FloatTensor, Dict]:
+        outputs = unpack_gt_instances(batch_data['data_samples'])
         batch_gt_instances, batch_gt_instances_ignore, batch_img_metas = outputs
 
-        loss_inputs = forward_result['outputs'] + (batch_gt_instances, batch_img_metas, batch_gt_instances_ignore)
+        loss_inputs = forward_result + (batch_gt_instances, batch_img_metas, batch_gt_instances_ignore)
         losses = self.model.bbox_head.loss_by_feat(*loss_inputs)
         loss, info = self.model.parse_losses(losses)
         info = {
