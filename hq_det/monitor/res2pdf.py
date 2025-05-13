@@ -7,6 +7,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.gridspec as gridspec
 from matplotlib import font_manager
 import matplotlib as mpl
+import numpy as np
 
 
 class TrainingVisualizer:
@@ -67,6 +68,20 @@ class TrainingVisualizer:
             print(f"Error loading data: {e}")
             return False
     
+    def _get_filtered_loss_data(self, column):
+        """获取过滤了离群值的损失数据，仅用于可视化"""
+        data = self.df[column].copy()
+        # 使用IQR方法识别离群值
+        Q1 = data.quantile(0.25)
+        Q3 = data.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        
+        # 将离群值替换为nan
+        filtered_data = data.apply(lambda x: np.nan if x < lower_bound or x > upper_bound else x)
+        return filtered_data
+    
     def create_performance_metrics_plot(self, fig, position):
         """Create plot for mAP, precision, recall, f1_score trend"""
         ax = fig.add_subplot(position)
@@ -85,9 +100,15 @@ class TrainingVisualizer:
         """Create plot for training or validation losses"""
         ax = fig.add_subplot(position)
         prefix = 'train/' if loss_type == 'train' else 'val/'
-        ax.plot(self.df.index, self.df[f'{prefix}box_loss'], marker='o', linestyle='-', label='Box Loss', markersize=4)
-        ax.plot(self.df.index, self.df[f'{prefix}cls_loss'], marker='s', linestyle='-', label='Class Loss', markersize=4)
-        ax.plot(self.df.index, self.df[f'{prefix}giou_loss'], marker='^', linestyle='-', label='GIoU Loss', markersize=4)
+        
+        # 使用过滤了离群值的数据进行可视化
+        box_loss = self._get_filtered_loss_data(f'{prefix}box_loss')
+        cls_loss = self._get_filtered_loss_data(f'{prefix}cls_loss')
+        giou_loss = self._get_filtered_loss_data(f'{prefix}giou_loss')
+        
+        ax.plot(self.df.index, box_loss, marker='o', linestyle='-', label='Box Loss', markersize=4)
+        ax.plot(self.df.index, cls_loss, marker='s', linestyle='-', label='Class Loss', markersize=4)
+        ax.plot(self.df.index, giou_loss, marker='^', linestyle='-', label='GIoU Loss', markersize=4)
         ax.set_xlabel('Epochs')
         ax.set_ylabel('Loss')
         ax.set_title(title)
@@ -98,14 +119,22 @@ class TrainingVisualizer:
     def create_all_losses_plot(self, fig, position):
         """Create plot for all losses in one figure"""
         ax = fig.add_subplot(position)
+        # 使用过滤了离群值的数据进行可视化
+        train_box_loss = self._get_filtered_loss_data('train/box_loss')
+        train_cls_loss = self._get_filtered_loss_data('train/cls_loss')
+        train_giou_loss = self._get_filtered_loss_data('train/giou_loss')
+        val_box_loss = self._get_filtered_loss_data('val/box_loss')
+        val_cls_loss = self._get_filtered_loss_data('val/cls_loss')
+        val_giou_loss = self._get_filtered_loss_data('val/giou_loss')
+        
         # Training losses
-        ax.plot(self.df.index, self.df['train/box_loss'], marker='o', linestyle='-', label='Train Box Loss', markersize=3, alpha=0.7)
-        ax.plot(self.df.index, self.df['train/cls_loss'], marker='s', linestyle='-', label='Train Class Loss', markersize=3, alpha=0.7)
-        ax.plot(self.df.index, self.df['train/giou_loss'], marker='^', linestyle='-', label='Train GIoU Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, train_box_loss, marker='o', linestyle='-', label='Train Box Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, train_cls_loss, marker='s', linestyle='-', label='Train Class Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, train_giou_loss, marker='^', linestyle='-', label='Train GIoU Loss', markersize=3, alpha=0.7)
         # Validation losses
-        ax.plot(self.df.index, self.df['val/box_loss'], marker='o', linestyle='--', label='Val Box Loss', markersize=3, alpha=0.7)
-        ax.plot(self.df.index, self.df['val/cls_loss'], marker='s', linestyle='--', label='Val Class Loss', markersize=3, alpha=0.7)
-        ax.plot(self.df.index, self.df['val/giou_loss'], marker='^', linestyle='--', label='Val GIoU Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, val_box_loss, marker='o', linestyle='--', label='Val Box Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, val_cls_loss, marker='s', linestyle='--', label='Val Class Loss', markersize=3, alpha=0.7)
+        ax.plot(self.df.index, val_giou_loss, marker='^', linestyle='--', label='Val GIoU Loss', markersize=3, alpha=0.7)
         ax.set_xlabel('Epochs')
         ax.set_ylabel('Loss')
         ax.set_title('All Losses Over Training')
@@ -172,10 +201,6 @@ class TrainingVisualizer:
     
     def create_data_table_page(self, pdf):
         """Create a page with the data table"""
-        fig, ax = plt.subplots(figsize=(11, 8.5))
-        ax.axis('off')
-        
-        # Create a table with the data
         # Select the most important columns to display
         display_cols = ['mAP', 'precision', 'recall', 'f1_score', 
                         'train/box_loss', 'train/cls_loss', 'train/giou_loss',
@@ -190,24 +215,40 @@ class TrainingVisualizer:
             if col != 'epoch':
                 table_data[col] = table_data[col].map(lambda x: f'{x:.4f}')
         
-        # Create the table
-        table = ax.table(
-            cellText=table_data.values,
-            colLabels=table_data.columns,
-            cellLoc='center',
-            loc='center',
-            colWidths=[0.08] * len(table_data.columns)
-        )
+        # Calculate how many rows can fit on one page
+        rows_per_page = 30  # Approximate number of rows that fit well on one page
         
-        # Style the table
-        table.auto_set_font_size(False)
-        table.set_fontsize(8)
-        table.scale(1, 1.5)
+        # Split the data into chunks for multiple pages if needed
+        total_rows = len(table_data)
+        num_pages = max(1, (total_rows + rows_per_page - 1) // rows_per_page)  # Ceiling division
         
-        plt.title('Training Data Table', fontsize=16)
-        plt.tight_layout()
-        pdf.savefig()
-        plt.close()
+        for page in range(num_pages):
+            start_idx = page * rows_per_page
+            end_idx = min((page + 1) * rows_per_page, total_rows)
+            page_data = table_data.iloc[start_idx:end_idx]
+            
+            fig, ax = plt.subplots(figsize=(11, 8.5))
+            ax.axis('off')
+            
+            # Create the table for this page
+            table = ax.table(
+                cellText=page_data.values,
+                colLabels=table_data.columns,
+                cellLoc='center',
+                loc='center',
+                colWidths=[0.08] * len(table_data.columns)
+            )
+            
+            # Style the table
+            table.auto_set_font_size(False)
+            table.set_fontsize(8)
+            table.scale(1, 1.5)
+            
+            page_title = f'Training Data Table (Page {page+1} of {num_pages})'
+            plt.title(page_title, fontsize=16)
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
     
     def generate_report(self):
         """Generate the complete PDF report"""

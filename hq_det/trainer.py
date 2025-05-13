@@ -1,4 +1,5 @@
 import os
+import time
 from . import torch_utils
 import torch.utils.data
 import pydantic
@@ -198,9 +199,13 @@ class HQTrainer:
 
         model.to(device)
         train_info = dict()
+        
+        
+        start_time = time.time()
         for i_epoch in range(num_epoches + warmup_epochs):
             # Training process
             train_losses = []
+            epoch_start_time = time.time()
 
             if i_epoch < warmup_epochs:
                 for param_group in optimizer.param_groups:
@@ -209,8 +214,9 @@ class HQTrainer:
                 pass
 
             model.train()
-            bar = tqdm(dataloader_train)
-            for i_batch, batch_data in enumerate(bar):
+            bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+            train_start_time = time.time()
+            for i_batch, batch_data in enumerate(bar_train):
                 # print(batch_data['bboxes'])
                 batch_data = torch_utils.batch_to_device(batch_data, device)
                 
@@ -224,7 +230,7 @@ class HQTrainer:
                     pass
                 
                 train_losses.append(loss.item())
-                bar.set_postfix(
+                bar_train.set_postfix(
                     **info
                 )
                 train_info = add_stats(train_info, info)
@@ -241,6 +247,10 @@ class HQTrainer:
                     pass
                 pass
             
+            train_time = time.time() - train_start_time
+            train_hours, remainder = divmod(train_time, 3600)
+            train_mins, train_secs = divmod(remainder, 60)
+            
             # Validation process
             model.eval()
             val_losses = []
@@ -248,7 +258,9 @@ class HQTrainer:
             gt_records = []
             pred_records = []
             num_images = 0
-            for i_batch, batch_data in enumerate(dataloader_val):
+            val_start_time = time.time()
+            bar_val = tqdm(dataloader_val, desc=f"Valid Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+            for i_batch, batch_data in enumerate(bar_val):
                 batch_data = torch_utils.batch_to_device(batch_data, device)
 
                 with torch.no_grad():
@@ -266,9 +278,18 @@ class HQTrainer:
                     # calculate averge iou
                     pass
                 
+                bar_val.set_postfix(**info_)
                 pred_records.extend(preds)
                 gt_records.extend(extract_ground_truth(batch_data))
                 pass
+            
+            val_time = time.time() - val_start_time
+            val_hours, remainder = divmod(val_time, 3600)
+            val_mins, val_secs = divmod(remainder, 60)
+            
+            epoch_time = time.time() - epoch_start_time
+            epoch_hours, remainder = divmod(epoch_time, 3600)
+            epoch_mins, epoch_secs = divmod(remainder, 60)
             
             train_info = divide_stats(train_info, len(dataloader_train))
             val_info = divide_stats(val_info, len(dataloader_val))
@@ -287,21 +308,29 @@ class HQTrainer:
             
             self.save_epoch_result(i_epoch, stat, self.args.output_path)
             self.logger.info(
-                f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, train loss: {np.mean(train_losses)}, validation loss: {np.mean(val_losses)}, '
+                f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
                 f'{format_stats(val_info)}'
+            )
+            print(
+                f'Elapsed Time: Train {int(train_hours):02d}:{int(train_mins):02d}:{int(train_secs):02d} | '
+                f'Valid {int(val_hours):02d}:{int(val_mins):02d}:{int(val_secs):02d} | '
+                f'Epoch {int(epoch_hours):02d}:{int(epoch_mins):02d}:{int(epoch_secs):02d}'
             )
 
             if i_epoch >= warmup_epochs:
                 scheduler.step()
-                pass
-
-
             # Save checkpoint
-
             checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
             model.save(checkpoint_path)
-            pass
-        pass
+
+        total_time = time.time() - start_time
+        total_hours, remainder = divmod(total_time, 3600)
+        total_mins, total_secs = divmod(remainder, 60)
+        start_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))
+        end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        print(f'Start Time: {start_time_str}, End Time: {end_time_str}')
+        print(f'Total Time: {int(total_hours):02d}:{int(total_mins):02d}:{int(total_secs):02d}') 
+
 
     
     def save_epoch_result(self, iepoch, stat, output_path):
@@ -332,7 +361,3 @@ class HQTrainer:
 
             for i in range(len(precisions)):
                 f.write(f'{recalls[i]},{precisions[i]}\n')
-                pass
-            pass
-        pass
-    pass
