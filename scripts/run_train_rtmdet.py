@@ -1,4 +1,9 @@
-from hq_det.monitor.logio import LogRedirector
+import time
+import torch
+
+from hq_det.monitor import LogRedirector
+from hq_det.monitor import TrainingVisualizer
+from hq_det.monitor import EmailSender 
 
 
 def run_train_rtmdet(args, class_names):
@@ -27,6 +32,8 @@ def run_train_rtmdet(args, class_names):
     )
 
     trainer.run()
+
+    return trainer
     
 
 def get_args():
@@ -40,13 +47,14 @@ def get_args():
     parser.add_argument('--warmup_epochs', '-w', type=int, default=2, help='Number of warmup epochs')
     parser.add_argument('--num_data_workers', '-j', type=int, default=8, help='Number of data workers')
     parser.add_argument('--lr0', '--initial-lr', type=float, default=1e-3, help='Initial learning rate')
-    parser.add_argument('--lr_min', '--min-lr', type=float, default=1e-5, help='Minimum learning rate')
+    parser.add_argument('--lr_min', '--min-lr', type=float, default=5e-5, help='Minimum learning rate')
     parser.add_argument('--batch_size', '-b', type=int, default=4, help='Batch size')
     parser.add_argument('--device', '--dev', type=str, default='cuda:0', help='Device to use')
     parser.add_argument('--checkpoint_interval', '--ckpt-int', type=int, default=-1, help='Checkpoint interval')
     parser.add_argument('--image_size', '-s', type=int, default=1024, help='Image size')
     parser.add_argument('--log_file', '-l', type=str, default=None, help='Path to save log file')
     parser.add_argument('--eval_class_names', type=str, default=None, help='Class names for evaluation')
+    parser.add_argument('--experiment_info', type=str, default=None, help='Additional experiment information')
 
     args = parser.parse_args()
     
@@ -55,8 +63,9 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
-    if args.log_file:
-        log_redirector = LogRedirector(args.log_file)
+    if args.log_file is None:
+        args.log_file = args.output_path + '/train.log'
+    log_redirector = LogRedirector(args.log_file)
     if args.eval_class_names is None:
         class_names = [
             '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', 
@@ -65,5 +74,26 @@ if __name__ == '__main__':
         ]
     else:
         class_names = args.eval_class_names.split(',')
-    run_train_rtmdet(args, class_names)
     
+    trainer = run_train_rtmdet(args, class_names)
+
+    csv_path = trainer.results_file
+    pdf_path = args.output_path + '/results.pdf'    
+    visualizer = TrainingVisualizer(input_file=csv_path, output_file=pdf_path)
+    visualizer.load_data()
+    visualizer.generate_report()
+
+    email_sender = EmailSender(
+        sender_email='RookieEmail@163.com',
+        sender_password='TFeLq9AKDdTjTsht'
+    )
+    email_sender.send_experiment_notification(
+        receiver_email='jiangchongyang@digitalpredict.cn',
+        experiment_name='RTMDet Training Results',
+        attachments=[pdf_path, csv_path, args.log_file],
+        additional_info=f"{args.experiment_info}\n"\
+            f"PDF_PATH: {pdf_path}\n"\
+            f"CSV_PATH: {csv_path}\n"\
+            f"LOG_PATH: {args.log_file}"
+    )
+

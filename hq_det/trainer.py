@@ -106,7 +106,7 @@ class HQTrainer:
     def __init__(self, args: HQTrainerArguments):
         self.args = args
         self.logger = loguru.logger
-        pass
+        self.results_file = os.path.join(args.output_path, 'results.csv')
 
     def build_dataset(self, train_transforms, val_transforms):
         pass
@@ -159,6 +159,7 @@ class HQTrainer:
     
 
     def run(self, ):
+        self.logger.info(self.args)
         device = self.args.device
         num_epoches = self.args.num_epoches
         warmup_epochs = self.args.warmup_epochs
@@ -311,7 +312,7 @@ class HQTrainer:
                 f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
                 f'{format_stats(val_info)}'
             )
-            print(
+            self.logger.info(
                 f'Elapsed Time: Train {int(train_hours):02d}:{int(train_mins):02d}:{int(train_secs):02d} | '
                 f'Valid {int(val_hours):02d}:{int(val_mins):02d}:{int(val_secs):02d} | '
                 f'Epoch {int(epoch_hours):02d}:{int(epoch_mins):02d}:{int(epoch_secs):02d}'
@@ -328,22 +329,20 @@ class HQTrainer:
         total_mins, total_secs = divmod(remainder, 60)
         start_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))
         end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-        print(f'Start Time: {start_time_str}, End Time: {end_time_str}')
-        print(f'Total Time: {int(total_hours):02d}:{int(total_mins):02d}:{int(total_secs):02d}') 
+        self.logger.info(f'Start Time: {start_time_str}, End Time: {end_time_str}')
+        self.logger.info(f'Total Time: {int(total_hours):02d}:{int(total_mins):02d}:{int(total_secs):02d}') 
 
 
     
     def save_epoch_result(self, iepoch, stat, output_path):
         header = ['mAP', 'precision', 'recall', 'f1_score', 'fnr', 'confidence', 'train/box_loss', 'train/cls_loss', 'train/giou_loss', 'val/box_loss', 'val/cls_loss', 'val/giou_loss']
-        results_file = os.path.join(output_path, 'results.csv')
+        
         if iepoch == 0:
             # add header
-            with open(results_file, 'w') as f:
+            with open(self.results_file, 'w') as f:
                 f.write(','.join(header) + '\n')
-                pass
-            pass
 
-        with open(results_file, 'a') as f:
+        with open(self.results_file, 'a') as f:
             values = [stat[colname] for colname in header if colname in stat]
             f.write(','.join([str(v) for v in values]) + '\n')
             pass
