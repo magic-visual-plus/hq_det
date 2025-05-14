@@ -14,8 +14,10 @@ dependencies = [
     "numpy",
     "scipy",
     "imgaug",
-    "mmcv==2.1.0",
+    "mmcv",
     "pydantic",
+    "tensorboard",
+    "faster-coco-eval",
 ]
 requires-python = ">=3.6"
 

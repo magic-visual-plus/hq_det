@@ -185,6 +185,11 @@ class HQTrainer:
                 class_names2id[class_name] for class_name in self.args.eval_class_names if class_name in class_names2id]
             pass
 
+        if len(eval_class_ids) == 0:
+            # cannot find any class, use all class ids to evaluate
+            eval_class_ids = list(dataset_train.class_id2names.keys())
+            pass
+
         model = self.build_model()
 
         dataloader_train = torch.utils.data.DataLoader(
