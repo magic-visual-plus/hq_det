@@ -3,6 +3,7 @@ import torch.nn
 from ..common import PredictionResult
 import numpy as np
 from typing import List
+from ..common import HQTrainerArguments
 
 
 class HQModel(torch.nn.Module):
@@ -36,6 +37,29 @@ class HQModel(torch.nn.Module):
     def save(self, path):
         pass
 
+    def get_param_dict(self, args: HQTrainerArguments):
+        # Get the parameters of the model
+        params_default = []
+        params_backbone = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "backbone" in name:
+                params_backbone.append(param)
+            else:
+                params_default.append(param)
+
+        return [
+            {
+                'params': params_default,
+                'lr': args.lr
+            },
+            {
+                'params': params_backbone,
+                'lr': args.lr0 * args.lr_backbone_mult,
+            }
+        ]
+    
     def to(self, device):
         super(HQModel, self).to(device)
         self.device = device

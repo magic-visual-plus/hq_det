@@ -44,3 +44,27 @@ class PredictionResult(pydantic.BaseModel):
         return coco_result
 
     pass
+
+
+class HQTrainerArguments(pydantic.BaseModel):
+    model_config  = pydantic.ConfigDict(protected_namespaces=())
+    data_path: str
+    num_epoches: int = 100
+    warmup_epochs: int = 5
+    num_data_workers: int = 0
+    lr0: float = 1e-4
+    lr_min: float = 1e-6
+    lr_backbone_multi: float = 0.1
+    batch_size: int = 4
+    device: str = 'cuda:0'
+    checkpoint_path: str = 'output'
+    output_path: str = 'output'
+    checkpoint_interval: int = 10
+    model_argument: dict = {}
+    image_size: int = 640
+    enable_amp: bool = False
+    gradient_update_interval: int = 1
+    
+    class_id2names: dict = None
+    eval_class_names: list = None
+    pass

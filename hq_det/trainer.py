@@ -10,31 +10,9 @@ from . import evaluate
 from . import box_utils
 from .common import PredictionResult
 from tqdm import tqdm
+from .models.base import HQModel
 import torch
-
-
-class HQTrainerArguments(pydantic.BaseModel):
-    model_config  = pydantic.ConfigDict(protected_namespaces=())
-    data_path: str
-    num_epoches: int = 100
-    warmup_epochs: int = 5
-    num_data_workers: int = 0
-    lr0: float = 1e-4
-    lr_min: float = 1e-6
-    batch_size: int = 4
-    device: str = 'cuda:0'
-    checkpoint_path: str = 'output'
-    output_path: str = 'output'
-    checkpoint_interval: int = 10
-    model_argument: dict = {}
-    image_size: int = 640
-    enable_amp: bool = False
-    gradient_update_interval: int = 1
-    
-    class_id2names: dict = None
-    eval_class_names: list = None
-    pass
-
+from common import HQTrainerArguments
 
 
 def add_stats(info1, info2):
@@ -147,14 +125,30 @@ class HQTrainer:
         return augment.Compose(transforms)
         pass
 
-    def build_optimizer(self, model):
-        return torch.optim.AdamW(model.parameters(), lr=self.args.lr0)
+    def build_optimizer(self, model: HQModel):
+        param_dict = model.get_param_dict(self.args)
+        return torch.optim.AdamW(param_dict, lr=self.args.lr0)
+
+    def get_lr_multi(self, iepoch):
+        lr0 = self.args.lr0
+        lr_min = self.args.lr_min
+        warmup_epochs = self.args.warmup_epochs
+        num_epoches = self.args.num_epoches
+
+        if iepoch < warmup_epochs:
+            lr = lr0 * (iepoch + 1) / warmup_epochs
+        else:
+            lr = lr0 * (1.0 - min(iepoch, num_epoches) / num_epoches)
+            pass
+        
+        return max(lr, lr_min)
+        pass
 
     def build_scheduler(self, optimizer):
         # return torch.optim.lr_scheduler.StepLR(optimizer, step_size=40, gamma=0.5)
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer,
-            lr_lambda=lambda epoch: 1.0 - min(epoch, self.args.num_epoches) / self.args.num_epoches
+            lr_lambda=self.get_lr_multi,
         )
     
 
@@ -205,7 +199,6 @@ class HQTrainer:
 
         model.to(device)
         train_info = dict()
-        
         
         start_time = time.time()
         for i_epoch in range(num_epoches + warmup_epochs):
