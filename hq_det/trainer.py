@@ -12,7 +12,7 @@ from .common import PredictionResult
 from tqdm import tqdm
 from .models.base import HQModel
 import torch
-from common import HQTrainerArguments
+from .common import HQTrainerArguments
 
 
 def add_stats(info1, info2):
@@ -199,18 +199,13 @@ class HQTrainer:
 
         model.to(device)
         train_info = dict()
-        
+
+        scheduler.step()
         start_time = time.time()
         for i_epoch in range(num_epoches + warmup_epochs):
             # Training process
             train_losses = []
             epoch_start_time = time.time()
-
-            if i_epoch < warmup_epochs:
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = max(lr0 * (i_epoch + 1) / warmup_epochs, lr_min)
-                    pass
-                pass
 
             model.train()
             bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
@@ -307,7 +302,7 @@ class HQTrainer:
             
             self.save_epoch_result(i_epoch, stat, self.args.output_path)
             self.logger.info(
-                f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
+                f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, lr_backbone: {optimizer.param_groups[1]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
                 f'{format_stats(val_info)}'
             )
             self.logger.info(

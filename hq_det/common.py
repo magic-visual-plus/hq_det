@@ -54,7 +54,7 @@ class HQTrainerArguments(pydantic.BaseModel):
     num_data_workers: int = 0
     lr0: float = 1e-4
     lr_min: float = 1e-6
-    lr_backbone_multi: float = 0.1
+    lr_backbone_mult: float = 0.1
     batch_size: int = 4
     device: str = 'cuda:0'
     checkpoint_path: str = 'output'

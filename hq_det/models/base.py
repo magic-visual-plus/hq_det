@@ -52,7 +52,7 @@ class HQModel(torch.nn.Module):
         return [
             {
                 'params': params_default,
-                'lr': args.lr
+                'lr': args.lr0
             },
             {
                 'params': params_backbone,
