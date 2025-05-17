@@ -1,5 +1,7 @@
 import os
 import time
+
+import torch.distributed
 from . import torch_utils
 import torch.utils.data
 import pydantic
@@ -13,6 +15,8 @@ from tqdm import tqdm
 from .models.base import HQModel
 import torch
 from .common import HQTrainerArguments
+from torch import distributed
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 def add_stats(info1, info2):
@@ -186,10 +190,37 @@ class HQTrainer:
 
         model = self.build_model()
 
+        if len(self.args.devices) > 1:
+            # distributed training
+            torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+            torch.distributed.init_process_group("nccl")
+            rank = distributed.get_rank()
+            print(f"Start running basic DDP example on rank {rank}.")
+            # create model and move it to GPU with id rank
+            device_id = rank % torch.cuda.device_count()
+            device = f'cuda:{device_id}'
+            model = model.to(device)
+            model = distributed.DDP(model, device_ids=[device_id])
+            
+            sampler_train = torch.utils.data.distributed.DistributedSampler(
+                dataset_train,
+                num_replicas=torch.distributed.get_world_size(),
+                rank=rank,
+                shuffle=True,
+            )
+            sampler_val = None
+        else:
+            # single GPU training
+            sampler_train = None
+            sampler_val = None
+            pass
+
         dataloader_train = torch.utils.data.DataLoader(
-            dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_data_workers, collate_fn=self.collate_fn)
+            dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_data_workers, 
+            collate_fn=self.collate_fn, sampler=sampler_train)
         dataloader_val = torch.utils.data.DataLoader(
-            dataset_val, batch_size=batch_size, shuffle=False, num_workers=num_data_workers, collate_fn=self.collate_fn)
+            dataset_val, batch_size=batch_size, shuffle=False, num_workers=num_data_workers,
+            collate_fn=self.collate_fn, sampler=sampler_val)
 
         optimizer = self.build_optimizer(model)
         scheduler = self.build_scheduler(optimizer)
@@ -220,7 +251,16 @@ class HQTrainer:
                     # Compute loss
                     # forward_result = torch_utils.nan_to_num(forward_result)
                     loss, info = model.compute_loss(batch_data, forward_result)
-                    # calculate averge iou
+                    
+                    if len(self.args.devices) > 1:
+                        # distributed training
+                        for k, v in info.items():
+                            if isinstance(v, torch.Tensor):
+                                info[k] = distributed.reduce(v, op=torch.distributed.ReduceOp.SUM)
+                            else:
+                                pass
+                            pass
+                        pass
                     pass
                 
                 train_losses.append(loss.item())
@@ -251,72 +291,79 @@ class HQTrainer:
             val_info = dict()
             gt_records = []
             pred_records = []
-            num_images = 0
-            val_start_time = time.time()
-            bar_val = tqdm(dataloader_val, desc=f"Valid Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
-            for i_batch, batch_data in enumerate(bar_val):
-                batch_data = torch_utils.batch_to_device(batch_data, device)
 
-                with torch.no_grad():
-                    forward_result = model(batch_data)
-                    # Compute loss
-                    loss, info_ = model.compute_loss(batch_data, forward_result)
-                    preds = model.postprocess(forward_result, batch_data)
+            if len(self.args.devices) > 1 and rank != 0:
+                pass
+            else:
+                # only rank 0 will do validation and model saving
+                val_start_time = time.time()
+                bar_val = tqdm(dataloader_val, desc=f"Valid Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+                for i_batch, batch_data in enumerate(bar_val):
+                    batch_data = torch_utils.batch_to_device(batch_data, device)
 
-                    for pred, image_id in zip(preds, batch_data['image_id']):
-                        pred.image_id = image_id
+                    with torch.no_grad():
+                        forward_result = model(batch_data)
+                        # Compute loss
+                        loss, info_ = model.compute_loss(batch_data, forward_result)
+                        preds = model.postprocess(forward_result, batch_data)
+
+                        for pred, image_id in zip(preds, batch_data['image_id']):
+                            pred.image_id = image_id
+                            pass
+
+                        val_info = add_stats(val_info, info_)
+                        val_losses.append(loss.item())
+                        # calculate averge iou
                         pass
-
-                    val_info = add_stats(val_info, info_)
-                    val_losses.append(loss.item())
-                    # calculate averge iou
+                    
+                    bar_val.set_postfix(**info_)
+                    pred_records.extend(preds)
+                    gt_records.extend(extract_ground_truth(batch_data))
                     pass
                 
-                bar_val.set_postfix(**info_)
-                pred_records.extend(preds)
-                gt_records.extend(extract_ground_truth(batch_data))
-                pass
-            
-            val_time = time.time() - val_start_time
-            val_hours, remainder = divmod(val_time, 3600)
-            val_mins, val_secs = divmod(remainder, 60)
-            
-            epoch_time = time.time() - epoch_start_time
-            epoch_hours, remainder = divmod(epoch_time, 3600)
-            epoch_mins, epoch_secs = divmod(remainder, 60)
-            
-            train_info = divide_stats(train_info, len(dataloader_train))
-            val_info = divide_stats(val_info, len(dataloader_val))
+                val_time = time.time() - val_start_time
+                val_hours, remainder = divmod(val_time, 3600)
+                val_mins, val_secs = divmod(remainder, 60)
+                
+                epoch_time = time.time() - epoch_start_time
+                epoch_hours, remainder = divmod(epoch_time, 3600)
+                epoch_mins, epoch_secs = divmod(remainder, 60)
+                
+                train_info = divide_stats(train_info, len(dataloader_train))
+                val_info = divide_stats(val_info, len(dataloader_val))
 
-            # Evaluate the model
-            # stat = evaluate.eval_detection_result(
-            #     gt_records, pred_records, model.get_class_names())
+                # Evaluate the model
+                # stat = evaluate.eval_detection_result(
+                #     gt_records, pred_records, model.get_class_names())
 
-            stat = evaluate.eval_detection_result_by_class_id(
-                gt_records, pred_records, eval_class_ids)
-            
-            for loss_name in ['box', 'cls', 'giou']:
-                stat[f'train/{loss_name}_loss'] = train_info[f'{loss_name}']
-                stat[f'val/{loss_name}_loss'] = val_info[f'{loss_name}']
+                stat = evaluate.eval_detection_result_by_class_id(
+                    gt_records, pred_records, eval_class_ids)
+                
+                for loss_name in ['box', 'cls', 'giou']:
+                    stat[f'train/{loss_name}_loss'] = train_info[f'{loss_name}']
+                    stat[f'val/{loss_name}_loss'] = val_info[f'{loss_name}']
+                    pass
+                
+                self.save_epoch_result(i_epoch, stat, self.args.output_path)
+                self.logger.info(
+                    f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, lr_backbone: {optimizer.param_groups[1]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
+                    f'{format_stats(val_info)}'
+                )
+                self.logger.info(
+                    f'Elapsed Time: Train {int(train_hours):02d}:{int(train_mins):02d}:{int(train_secs):02d} | '
+                    f'Valid {int(val_hours):02d}:{int(val_mins):02d}:{int(val_secs):02d} | '
+                    f'Epoch {int(epoch_hours):02d}:{int(epoch_mins):02d}:{int(epoch_secs):02d}'
+                )
+
+                # Save checkpoint
+                checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
+                model.save(checkpoint_path)
                 pass
-            
-            self.save_epoch_result(i_epoch, stat, self.args.output_path)
-            self.logger.info(
-                f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, lr_backbone: {optimizer.param_groups[1]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
-                f'{format_stats(val_info)}'
-            )
-            self.logger.info(
-                f'Elapsed Time: Train {int(train_hours):02d}:{int(train_mins):02d}:{int(train_secs):02d} | '
-                f'Valid {int(val_hours):02d}:{int(val_mins):02d}:{int(val_secs):02d} | '
-                f'Epoch {int(epoch_hours):02d}:{int(epoch_mins):02d}:{int(epoch_secs):02d}'
-            )
 
             if i_epoch >= warmup_epochs:
                 scheduler.step()
-            # Save checkpoint
-            checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
-            model.save(checkpoint_path)
-
+                pass
+            pass
         total_time = time.time() - start_time
         total_hours, remainder = divmod(total_time, 3600)
         total_mins, total_secs = divmod(remainder, 60)

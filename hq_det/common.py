@@ -66,5 +66,7 @@ class HQTrainerArguments(pydantic.BaseModel):
     gradient_update_interval: int = 1
     
     class_id2names: dict = None
-    eval_class_names: list = None
+    eval_class_names: List[str] = None
+
+    devices: List[int] = [0]
     pass
