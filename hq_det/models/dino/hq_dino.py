@@ -1,4 +1,3 @@
-from mmdet.configs.dino import dino_4scale_r50_8xb2_12e_coco as dino_config
 from mmengine import MODELS, Config
 import torch.nn
 from ...common import PredictionResult
