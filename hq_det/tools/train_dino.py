@@ -75,7 +75,7 @@ class MyTrainer(HQTrainer):
 
 def run(
         data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=4, image_size=1024,
-        gradient_update_interval=1):
+        gradient_update_interval=1, devices=[0]):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -95,6 +95,7 @@ def run(
             },
             eval_class_names=eval_class_names,
             gradient_update_interval=gradient_update_interval,
+            devices=devices,
         )
     )
     trainer.run()

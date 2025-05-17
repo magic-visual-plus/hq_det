@@ -18,6 +18,7 @@ dependencies = [
     "pydantic",
     "tensorboard",
     "faster-coco-eval",
+    "loguru",
 ]
 requires-python = ">=3.6"
 
