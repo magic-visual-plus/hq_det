@@ -129,7 +129,10 @@ class HQTrainer:
         return augment.Compose(transforms)
         pass
 
-    def build_optimizer(self, model: HQModel):
+    def build_optimizer(self, model):
+        if isinstance(model, DDP):
+            model = model.module
+            pass
         param_dict = model.get_param_dict(self.args)
         return torch.optim.AdamW(param_dict, lr=self.args.lr0)
 
@@ -155,6 +158,26 @@ class HQTrainer:
             lr_lambda=self.get_lr_multi,
         )
     
+    def is_master(self,):
+        return len(self.args.devices) == 1 or (torch.distributed.is_initialized() and torch.distributed.get_rank() == 0)
+    
+    def compute_loss(self, model, batch_data, forward_result):
+        if isinstance(model, DDP):
+            model = model.module
+            pass
+        return model.compute_loss(batch_data, forward_result)
+    
+    def postprocess(self, model, batch_data, forward_result):
+        if isinstance(model, DDP):
+            model = model.module
+            pass
+        return model.postprocess(forward_result, batch_data)
+    
+    def save_model(self, model, path):
+        if isinstance(model, DDP):
+            model = model.module
+            pass
+        model.save(path)
 
     def run(self, ):
         self.logger.info(self.args)
@@ -195,12 +218,11 @@ class HQTrainer:
             torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
             torch.distributed.init_process_group("nccl")
             rank = distributed.get_rank()
-            print(f"Start running basic DDP example on rank {rank}.")
             # create model and move it to GPU with id rank
             device_id = rank % torch.cuda.device_count()
             device = f'cuda:{device_id}'
-            model = model.to(device)
-            model = distributed.DDP(model, device_ids=[device_id])
+            model.to(device)
+            model = DDP(model, device_ids=[device_id])
             
             sampler_train = torch.utils.data.distributed.DistributedSampler(
                 dataset_train,
@@ -213,13 +235,15 @@ class HQTrainer:
             # single GPU training
             sampler_train = None
             sampler_val = None
+            device = self.args.device[0]
+            model = model.to(device)
             pass
 
         dataloader_train = torch.utils.data.DataLoader(
-            dataset_train, batch_size=batch_size, shuffle=True, num_workers=num_data_workers, 
+            dataset_train, batch_size=batch_size, num_workers=num_data_workers, 
             collate_fn=self.collate_fn, sampler=sampler_train)
         dataloader_val = torch.utils.data.DataLoader(
-            dataset_val, batch_size=batch_size, shuffle=False, num_workers=num_data_workers,
+            dataset_val, batch_size=batch_size, num_workers=num_data_workers,
             collate_fn=self.collate_fn, sampler=sampler_val)
 
         optimizer = self.build_optimizer(model)
@@ -228,7 +252,6 @@ class HQTrainer:
 
         os.makedirs(self.args.checkpoint_path, exist_ok=True)
 
-        model.to(device)
         train_info = dict()
 
         scheduler.step()
@@ -239,7 +262,14 @@ class HQTrainer:
             epoch_start_time = time.time()
 
             model.train()
-            bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+            if self.is_master():
+                bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+                pass
+            else:
+                bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
+                bar_train.disable = True
+                pass
+
             train_start_time = time.time()
             for i_batch, batch_data in enumerate(bar_train):
                 # print(batch_data['bboxes'])
@@ -250,7 +280,7 @@ class HQTrainer:
                     forward_result = model(batch_data)
                     # Compute loss
                     # forward_result = torch_utils.nan_to_num(forward_result)
-                    loss, info = model.compute_loss(batch_data, forward_result)
+                    loss, info = self.compute_loss(model, batch_data, forward_result)
                     
                     if len(self.args.devices) > 1:
                         # distributed training
@@ -292,9 +322,7 @@ class HQTrainer:
             gt_records = []
             pred_records = []
 
-            if len(self.args.devices) > 1 and rank != 0:
-                pass
-            else:
+            if self.is_master():
                 # only rank 0 will do validation and model saving
                 val_start_time = time.time()
                 bar_val = tqdm(dataloader_val, desc=f"Valid Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
@@ -304,8 +332,8 @@ class HQTrainer:
                     with torch.no_grad():
                         forward_result = model(batch_data)
                         # Compute loss
-                        loss, info_ = model.compute_loss(batch_data, forward_result)
-                        preds = model.postprocess(forward_result, batch_data)
+                        loss, info_ = self.compute_loss(model, batch_data, forward_result)
+                        preds = self.postprocess(model, batch_data, forward_result)
 
                         for pred, image_id in zip(preds, batch_data['image_id']):
                             pred.image_id = image_id
@@ -357,7 +385,7 @@ class HQTrainer:
 
                 # Save checkpoint
                 checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
-                model.save(checkpoint_path)
+                self.save_model(model, checkpoint_path)
                 pass
 
             if i_epoch >= warmup_epochs:
