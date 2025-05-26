@@ -1,0 +1,100 @@
+# Learning rate parameters
+lr: 1e-4
+lr_encoder: 1.5e-4
+lr_vit_layer_decay: 0.8
+lr_component_decay: 1.0
+
+# Training parameters
+batch_size: 2
+weight_decay: 1e-4
+epochs: 12
+lr_drop: 11
+clip_max_norm: 0.1
+
+# Dropout parameters
+dropout: 0.0
+drop_path: 0.0
+drop_mode: 'standard'  # choices: ['standard', 'early', 'late']
+drop_schedule: 'constant'  # choices: ['constant', 'linear']
+cutoff_epoch: 0
+
+# Model parameters
+pretrained_encoder: null
+pretrain_weights: null
+pretrain_exclude_keys: null
+pretrain_keys_modify_to_load: null
+
+# Backbone parameters
+encoder: 'vit_tiny'
+vit_encoder_num_layers: 12
+window_block_indexes: null
+position_embedding: 'sine'  # choices: ['sine', 'learned']
+out_feature_indexes: [-1]
+
+# Transformer parameters
+dec_layers: 3
+dim_feedforward: 2048
+hidden_dim: 256
+sa_nheads: 8
+ca_nheads: 8
+num_queries: 300
+group_detr: 13
+two_stage: false
+projector_scale: 'P4'  # choices: ['P3', 'P4', 'P5', 'P6']
+lite_refpoint_refine: false
+num_select: 100
+dec_n_points: 4
+decoder_norm: 'LN'
+bbox_reparam: false
+
+# Matcher parameters
+set_cost_class: 2.0
+set_cost_bbox: 5.0
+set_cost_giou: 2.0
+
+# Loss coefficients
+cls_loss_coef: 2.0
+bbox_loss_coef: 5.0
+giou_loss_coef: 2.0
+focal_alpha: 0.25
+
+# Loss options
+aux_loss: true
+sum_group_losses: false
+use_varifocal_loss: false
+use_position_supervised_loss: false
+ia_bce_loss: false
+
+# Dataset parameters
+dataset_file: 'coco'
+coco_path: null
+square_resize_div_64: false
+
+# Output and checkpoint parameters
+output_dir: 'output'
+checkpoint_interval: 10
+seed: 42
+resume: ''
+start_epoch: 0
+eval: false
+use_ema: false
+ema_decay: 0.9997
+num_workers: 2
+
+# Distributed training parameters
+device: 'cuda'
+world_size: 1
+dist_url: 'env://'
+sync_bn: true
+
+# FP16 parameters
+fp16_eval: false
+
+# Export parameters
+shape: [640, 640]
+infer_dir: null
+verbose: false
+opset_version: 17
+simplify: false
+tensorrt: false
+dry_run: false

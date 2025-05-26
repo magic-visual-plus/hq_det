@@ -1,41 +1,69 @@
+import yaml
 
 import torch.nn
 from ...common import PredictionResult
 import numpy as np
 import os
-from .core import YAMLConfig
 from typing import List
 import cv2
 from ... import torch_utils
 import torchvision.transforms.functional as VF
 import time
 
+from .configs.config_loader import ConfigLoader
+from .util.utils import ModelEma, BestMetricHolder, clean_state_dict
+import hq_det.models.lwdetr.util.misc as utils
+from .util.get_param_dicts import get_param_dict
 
-class HQRTDETR(torch.nn.Module):
+# from engine import evaluate, train_one_epoch
+try:
+    from hq_det.models.lwdetr.models import build_model
+except:
+    import os
+    import subprocess
+    # Get the current file's directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    ops_dir = os.path.join(current_dir, 'models', 'ops')
+
+    # Change to ops directory and run setup.py
+    try:
+        subprocess.run(['python', 'setup.py', 'build', 'install'], 
+                      cwd=ops_dir, 
+                      check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error compiling ops: {e}")
+        raise
+    from hq_det.models.lwdetr.models import build_model
+
+from ..base import HQModel
+
+class HQLWDETR(HQModel):
     def __init__(self, class_id2names=None, **kwargs):
-        super(HQRTDETR, self).__init__()
+        super(HQLWDETR, self).__init__()
 
         if class_id2names is None:
             data = torch.load(kwargs['model'], map_location='cpu')
             self.id2names = data['id2names']
         else:
             self.id2names = class_id2names
-            pass
-
-        current_module_path = __file__
-        config_path = os.path.join(
-            os.path.dirname(current_module_path), 'configs', 'rtdetrv2', 'rtdetrv2_r50vd_m_7x_coco.yml')
+        model_name = kwargs['model_name']
+        model_dir = os.path.join(os.path.dirname(__file__), 'configs')
+        config_loader = ConfigLoader(config_dir=model_dir)
+        self.model_args = config_loader.get_args(model_name)
+        for k, v in kwargs.items():
+            setattr(self.model_args, k, v)
         
-        cfg = YAMLConfig(config_path)
-        cfg.yaml_cfg['num_classes'] = len(self.id2names)
-        cfg.yaml_cfg['remap_mscoco_category'] = False
-        cfg.yaml_cfg['eval_spatial_size'] = [1024, 1024]
-        self.model = cfg.model
-        self.criterion = cfg.criterion
-        self.postprocessor = cfg.postprocessor
-        self.load_model(kwargs['model'])
+        utils.init_distributed_mode(self.model_args)
+        print(self.model_args)
+
+        self.model, self.criterion, self.postprocessors = build_model(self.model_args)
+        self.load_model()
+        # print(self.model)
+        # print(self.criterion)
+        # print(self.postprocessors)
+        # exit()
         self.image_size = kwargs.get('image_size', 1024)
-        self.device = 'cpu'
+        # self.device = 'cpu'
 
     def get_class_names(self):
         # Get the class names from the model
@@ -45,15 +73,55 @@ class HQRTDETR(torch.nn.Module):
             pass
         return names
 
-    def load_model(self, path):
-        # Load the YOLO model using the specified path and device
-        data = torch.load(path, map_location='cpu')
-        state_dict = data['ema']['module']
-        new_state_dict={k: v for k, v in state_dict.items() if state_dict[k].shape == self.model.state_dict()[k].shape}
-        print(len(new_state_dict), len(state_dict))
-        print([k for k in self.model.state_dict().keys() if k not in new_state_dict.keys()])
-        self.model.load_state_dict(new_state_dict, strict=False)
-        
+    def load_model(self):
+
+        self.model.to(self.model_args.device)
+        if self.model_args.use_ema:
+            self.ema_m = ModelEma(self.model, decay=self.model_args.ema_decay)
+        else:
+            self.ema_m = None
+        self.model_without_ddp = self.model
+        if self.model_args.distributed:
+            if self.model_args.sync_bn:
+                # 转换为同步BatchNorm
+                self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+            # 使用DistributedDataParallel进行分布式训练
+            self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.model_args.gpu])
+            self.model_without_ddp = self.model.module
+        # 计算模型参数量
+        n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print('number of params:', n_parameters)
+        if self.model_args.pretrain_weights is not None:
+            checkpoint = torch.load(self.model_args.pretrain_weights, map_location='cpu')
+            # 支持排除某些键
+            # 例如,加载object365预训练时,不加载`class_embed.[weight, bias]`
+            if self.model_args.pretrain_exclude_keys is not None:
+                assert isinstance(self.model_args.pretrain_exclude_keys, list)
+                for exclude_key in self.model_args.pretrain_exclude_keys:
+                    checkpoint['model'].pop(exclude_key)
+            if self.model_args.pretrain_keys_modify_to_load is not None:
+                from hq_det.models.lwdetr.util.obj365_to_coco_model import get_coco_pretrain_from_obj365
+                assert isinstance(self.model_args.pretrain_keys_modify_to_load, list)
+                for modify_key_to_load in self.model_args.pretrain_keys_modify_to_load:
+                    checkpoint['model'][modify_key_to_load] = get_coco_pretrain_from_obj365(
+                        self.model_without_ddp.state_dict()[modify_key_to_load],
+                        checkpoint['model'][modify_key_to_load]
+                    )
+            self.model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
+            if self.model_args.use_ema:
+                del self.ema_m
+            ema_m = ModelEma(self.model_without_ddp)
+        # 模型恢复
+        if self.model_args.resume:
+            checkpoint = torch.load(self.model_args.resume, map_location='cpu')
+            self.model.load_state_dict(checkpoint['model'], strict=True)
+            if self.model_args.use_ema:
+                if 'ema_model' in checkpoint:
+                    self.ema_m.module.load_state_dict(clean_state_dict(checkpoint['ema_model']))
+                else:
+                    del ema_m
+                    ema_m = ModelEma(self.model)     
+
 
     def extract_target(self, batch_data):
         # Extract the target data from the batch
@@ -62,10 +130,12 @@ class HQRTDETR(torch.nn.Module):
     def forward(self, batch_data):
         samples = batch_data['img']
         targets = self.extract_target(batch_data)
+        print(samples.shape)
+        print(targets)
         forward_result = self.model(samples, targets)
-        
+        print(forward_result)
+        exit()
         return forward_result
-        
     
     def preprocess(self, batch_data):
         # Preprocess the input data for the YOLO model
@@ -150,9 +220,6 @@ class HQRTDETR(torch.nn.Module):
                     rate = max_size / max_hw
                     imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
                     img_scales[i] = rate
-                    pass
-                pass
-            pass
 
         original_shapes = []
         for img in imgs:
@@ -183,6 +250,12 @@ class HQRTDETR(torch.nn.Module):
 
         pass
 
+    def get_param_dict(self, args):
+        model_without_ddp = self.model_without_ddp
+        self.model_args.lr = args.lr0
+        param_dicts = get_param_dict(self.model_args, model_without_ddp)
+        return param_dicts
+    
     def compute_loss(self, batch_data, forward_result):
         # Compute the loss using the YOLO model
         # This is a placeholder; actual implementation may vary
@@ -221,7 +294,7 @@ class HQRTDETR(torch.nn.Module):
 
 
     def to(self, device):
-        super(HQRTDETR, self).to(device)
-        self.device = device
+        super(HQLWDETR, self).to(device)
+        self.device = device if torch.cuda.is_available() else 'cpu'
 
     pass

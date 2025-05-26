@@ -176,7 +176,6 @@ class HQTrainer:
     def save_model(self, model, path):
         if isinstance(model, DDP):
             model = model.module
-            pass
         model.save(path)
 
     def run(self, ):
@@ -235,8 +234,8 @@ class HQTrainer:
             # single GPU training
             sampler_train = None
             sampler_val = None
-            device = self.args.device[0]
-            model = model.to(device)
+            device = self.args.device[0] if not isinstance(self.args.device, str) else self.args.device
+            model.to(device)
             pass
 
         dataloader_train = torch.utils.data.DataLoader(
