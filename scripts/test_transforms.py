@@ -12,16 +12,18 @@ if __name__ == '__main__':
 
     transforms = [
         augment.ToNumpy(),
-        # augment.RandomHorizontalFlip(),
-        # augment.RandomVerticalFlip(),
-        # augment.RandomGrayScale(),
-        # augment.RandomShuffleChannel(),
-        # augment.RandomAffine(),
-        # augment.RandomPerspective(),
-        # augment.RandomNoise(),
-        # augment.RandomBrightness(),
-        augment.RandomCrop(p=1.0),
-        augment.RandomResize(p=1.0),
+        augment.RandomHorizontalFlip(),
+        augment.RandomVerticalFlip(),
+        augment.RandomGrayScale(),
+        augment.RandomShuffleChannel(),
+        augment.RandomRotate(),
+        augment.RandomRotate90(),
+        augment.RandomAffine(),
+        augment.RandomPerspective(),
+        augment.RandomNoise(),
+        augment.RandomBrightness(),
+        augment.RandomCrop(),
+        augment.RandomResize(),
     ]
     transforms = augment.Compose(transforms)
 
@@ -57,7 +59,7 @@ if __name__ == '__main__':
                 (int(box[0]), int(box[1])),
                 (int(box[2]), int(box[3])),
                 (0, 255, 0),
-                2
+                3
             )
             pass
         if img_id == 937:
