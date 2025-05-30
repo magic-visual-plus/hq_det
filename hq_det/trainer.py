@@ -177,6 +177,15 @@ class HQTrainer:
         if isinstance(model, DDP):
             model = model.module
         model.save(path)
+        pass
+
+    def optimizer_step(self, optimizer, scaler, model):
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad()
+        pass
 
     def run(self, ):
         self.logger.info(self.args)
@@ -301,15 +310,17 @@ class HQTrainer:
 
                 scaler.scale(loss / self.args.gradient_update_interval).backward()
                 if i_batch % self.args.gradient_update_interval == 0:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
+                    self.optimizer_step(optimizer, scaler, model)
+                    pass
                 else:
                     pass
                 pass
             
+            if i_batch % self.args.gradient_update_interval != 0:
+                # if the last batch is not a multiple of gradient update interval, we still need to step the optimizer
+                self.optimizer_step(optimizer, scaler, model)
+                pass
+
             train_time = time.time() - train_start_time
             train_hours, remainder = divmod(train_time, 3600)
             train_mins, train_secs = divmod(remainder, 60)
@@ -333,11 +344,9 @@ class HQTrainer:
                         # Compute loss
                         loss, info_ = self.compute_loss(model, batch_data, forward_result)
                         preds = self.postprocess(model, batch_data, forward_result)
-
                         for pred, image_id in zip(preds, batch_data['image_id']):
                             pred.image_id = image_id
                             pass
-
                         val_info = add_stats(val_info, info_)
                         val_losses.append(loss.item())
                         # calculate averge iou

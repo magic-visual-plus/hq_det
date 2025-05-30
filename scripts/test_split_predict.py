@@ -1,7 +1,7 @@
 
 import os
 import sys
-from hq_det.models import dino
+from hq_det.models.dino import hq_dino
 import cv2
 import numpy as np
 import torch
@@ -39,7 +39,7 @@ def split_image(img, stride=1024, shift=20, max_split=3):
 
 if __name__ == "__main__":
 
-    model = dino.HQDINO(model=sys.argv[1])
+    model = hq_dino.HQDINO(model=sys.argv[1])
     image_path = sys.argv[2]
 
     img = cv2.imread(image_path)
