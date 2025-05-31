@@ -9,9 +9,9 @@ import cv2
 from ... import torch_utils
 import torchvision.transforms.functional as VF
 import time
+from ..base import HQModel
 
-
-class HQRTDETR(torch.nn.Module):
+class HQRTDETR(HQModel):
     def __init__(self, class_id2names=None, **kwargs):
         super(HQRTDETR, self).__init__()
 

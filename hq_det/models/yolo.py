@@ -7,8 +7,9 @@ from ultralytics.nn.tasks import attempt_load_one_weight, DetectionModel
 from ..common import PredictionResult
 import numpy as np
 
+from .base import HQModel
 
-class HQYOLO(torch.nn.Module):
+class HQYOLO(HQModel):
     def __init__(self, class_id2names, **kwargs):
         super(HQYOLO, self).__init__()
         model, weights = attempt_load_one_weight(kwargs['model'])
