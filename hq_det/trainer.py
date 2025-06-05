@@ -241,8 +241,8 @@ class HQTrainer:
             sampler_val = None
         else:
             # single GPU training
-            sampler_train = None
-            sampler_val = None
+            sampler_train = torch.utils.data.RandomSampler(dataset_train)
+            sampler_val = torch.utils.data.SequentialSampler(dataset_val)
             device = self.args.device[0] if not isinstance(self.args.device, str) else self.args.device
             model.to(device)
             pass
