@@ -57,6 +57,9 @@ class MyTrainer(HQTrainer):
         annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
         annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
 
+        train_transforms.extend([augment.Pad(min_size=256)])
+        val_transforms.extend([augment.Pad(min_size=256)])
+
         dataset_train = CocoDetection(
             image_path_train, annotation_file_train, transforms=train_transforms
         )
@@ -75,7 +78,7 @@ class MyTrainer(HQTrainer):
 
 def run(
         data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=4, image_size=1024,
-        gradient_update_interval=1, devices=[0]):
+        gradient_update_interval=1, devices=[0], lr_backbone_mult=0.1):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -84,6 +87,7 @@ def run(
             num_data_workers=12,
             lr0=lr0,
             lr_min=1e-6,
+            lr_backbone_mult=lr_backbone_mult,
             batch_size=batch_size,
             device='cuda:0',
             checkpoint_path=output_path,

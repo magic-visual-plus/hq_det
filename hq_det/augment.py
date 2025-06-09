@@ -499,6 +499,30 @@ class Resize:
 
         return data
 
+class Pad:
+    def __init__(self, min_size=256, fill=(114, 114, 114)):
+        self.min_size = min_size
+        self.fill = fill
+    
+    def __call__(self, data):
+        img = data['img']
+        bboxes = data['bboxes']
+
+        h, w = img.shape[:2]
+        min_hw = min(h, w)
+
+        if min_hw < self.min_size:
+            new_h = max(h, self.min_size)
+            new_w = max(w, self.min_size)
+            img = cv2.copyMakeBorder(img, 0, new_h - h, 0, new_w - w,
+                                     cv2.BORDER_CONSTANT, value=self.fill)
+            pass
+
+        data['img'] = img.copy()
+        data['bboxes'] = bboxes
+
+        return data
+
 class Compose:
     def __init__(self, transforms):
         self.transforms = transforms
