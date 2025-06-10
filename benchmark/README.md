@@ -26,6 +26,9 @@
 - 训练日志：`nohup.out`
 - 评估结果：`results.csv`
 
+完整的实验结果文件可以从以下链接下载：
+https://rookie-ai.oss-cn-hangzhou.aliyuncs.com/exper-0606.zip?OSSAccessKeyId=LTAI5tH4rq3aaiq8pzYXArsN&Expires=3.6e%2B97&Signature=KFM5BV0Y2W87IMe8P9I6Iu8Yqcc%3D
+
 ## 注意事项
 
 1. 所有实验使用相同的评估数据集
