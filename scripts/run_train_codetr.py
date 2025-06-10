@@ -97,11 +97,7 @@ if __name__ == '__main__':
         args.log_file = args.output_path + '/train.log'
     log_redirector = LogRedirector(args.log_file)
     if args.eval_class_names is None:
-        class_names = [
-            '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', 
-            '烫伤', '爆针线', '破损', ' 碰伤', '线头', '脏污', '褶皱(贯穿)', 
-            '褶皱（轻度）', '褶皱（重度）', '重跳针'
-        ]
+        class_names = []
     else:
         class_names = args.eval_class_names.split(',')
     
