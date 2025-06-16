@@ -6,9 +6,9 @@ import torch.nn
 from mmengine import MODELS
 from mmengine.config import ConfigDict
 from mmengine.structures import InstanceData
-from mmdet.configs.rtmdet import rtmdet_l_8xb32_300e_coco as rtmdet_config
 from mmdet.models.utils import unpack_gt_instances
 from mmdet.structures import DetDataSample
+from mmdet.configs.rtmdet import rtmdet_l_8xb32_300e_coco as rtmdet_config
 
 from .. import torch_utils
 from ..common import PredictionResult
