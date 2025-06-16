@@ -56,14 +56,14 @@ class HQRFDETR(HQModel):
         
 
     def postprocess(self, forward_result: Tuple, batch_data: Dict, confidence: float = 0.0) -> List[PredictionResult]:
-        """
+        print(forward_result)
         
-        """
         pass
         
 
     def compute_loss(self, batch_data: Tuple, forward_result: Tuple) -> Tuple[torch.FloatTensor, Dict]:
         samples, targets = batch_data
+        
         loss_dict = self.criterion(forward_result, targets)
         weight_dict = self.criterion.weight_dict
         losses = sum(
@@ -76,19 +76,19 @@ class HQRFDETR(HQModel):
             'cls': loss_dict['loss_ce'].item(),
             'box': loss_dict['loss_bbox'].item(),
             'giou': loss_dict['loss_giou'].item(),
-            'loss_ce_0': loss_dict['loss_ce_0'].item(),
-            'loss_bbox_0': loss_dict['loss_bbox_0'].item(),
-            'loss_giou_0': loss_dict['loss_giou_0'].item(),
-            'loss_ce_1': loss_dict['loss_ce_1'].item(),
-            'loss_bbox_1': loss_dict['loss_bbox_1'].item(),
-            'loss_giou_1': loss_dict['loss_giou_1'].item(),
-            'cardinality_error': loss_dict['cardinality_error'].item(),
-            'cardinality_error_0': loss_dict['cardinality_error_0'].item(),
-            'cardinality_error_1': loss_dict['cardinality_error_1'].item(),
-            'loss_ce_enc': loss_dict['loss_ce_enc'].item(),
-            'loss_bbox_enc': loss_dict['loss_bbox_enc'].item(),
-            'loss_giou_enc': loss_dict['loss_giou_enc'].item(),
-            'weight_dict': weight_dict,
+            # 'loss_ce_0': loss_dict['loss_ce_0'].item(),
+            # 'loss_bbox_0': loss_dict['loss_bbox_0'].item(),
+            # 'loss_giou_0': loss_dict['loss_giou_0'].item(),
+            # 'loss_ce_1': loss_dict['loss_ce_1'].item(),
+            # 'loss_bbox_1': loss_dict['loss_bbox_1'].item(),
+            # 'loss_giou_1': loss_dict['loss_giou_1'].item(),
+            # 'cardinality_error': loss_dict['cardinality_error'].item(),
+            # 'cardinality_error_0': loss_dict['cardinality_error_0'].item(),
+            # 'cardinality_error_1': loss_dict['cardinality_error_1'].item(),
+            # 'loss_ce_enc': loss_dict['loss_ce_enc'].item(),
+            # 'loss_bbox_enc': loss_dict['loss_bbox_enc'].item(),
+            # 'loss_giou_enc': loss_dict['loss_giou_enc'].item(),
+            # 'weight_dict': weight_dict,
         }
         return losses, info
 
