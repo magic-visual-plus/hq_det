@@ -7,17 +7,14 @@ import os
 import torch
 import torch.optim
 import torchvision
-from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
 from hq_det import torch_utils
-
+from hq_det.dataset import CocoDetection as HQCocoDetection
 
 class MyTrainer(HQTrainer):
     def __init__(self, args: HQTrainerArguments):
         super().__init__(args)
-        pass
 
     def build_model(self):
-        # Load the YOLO model using the specified path and device
         id2names = self.args.class_id2names
         self.args.model_argument.update({
             'dataset_dir': self.args.data_path,
@@ -50,30 +47,24 @@ class MyTrainer(HQTrainer):
                 b['img'] = torch.tensor(b['img'], dtype=torch.float32).permute(2, 0, 1)
             b['img'], b['bboxes_cxcywh_norm'] = torch_utils.pad_image(b['img'], b['bboxes_cxcywh_norm'], (max_h, max_w))
 
-        samples = []
-        targets = []
-        for b in batch:  # Change from (H,W,C) to (C,H,W)
-            img = b.pop('img')
-            samples.append(img.clone().detach())
-            targets.append(
-                {
-                    'boxes': safe_to_tensor(b['bboxes'], dtype=torch.float32),
-                    'labels': safe_to_tensor(b['cls'], dtype=torch.int),
-                    'iscrowd': safe_to_tensor(b['iscrowd'], dtype=torch.int),
-                    'area': safe_to_tensor(b['area'], dtype=torch.float32),
-                    'image_id': b['image_id'],
-                    # 'batch_idx': b['batch_idx'],
-                    'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
-                    'size': safe_to_tensor(b['size'], dtype=torch.int),        
-                }
-            )
-        samples = nested_tensor_from_tensor_list(samples)
-        return samples, targets
+        targets = [{
+            'boxes': safe_to_tensor(b['bboxes_cxcywh_norm'], dtype=torch.float32),
+            'labels': safe_to_tensor(b['cls'], dtype=torch.int64),
+            'iscrowd': safe_to_tensor(b['iscrowd'], dtype=torch.int64),
+            'area': safe_to_tensor(b['area'], dtype=torch.float32),
+            'image_id': b['image_id'],
+            'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
+            'size': safe_to_tensor(b['size'], dtype=torch.int64),
+        } for b in batch]
 
-    def data_preprocessor(self, batch_data, training=True):
-        batch_data.update(self.model.data_preprocessor(batch_data, training))
-        return batch_data
-    
+        return {
+            'targets': tuple(targets),
+            'image_id': [b['image_id'] for b in batch],
+            'bboxes_xyxy': torch.cat([b['bboxes_xyxy'] for b in batch], 0),
+            'cls': torch.cat([b['cls'] for b in batch], 0),
+            'batch_idx': torch.cat([b['batch_idx']+i for i, b in enumerate(batch)], 0),
+            'img': torch.stack([b['img'] for b in batch], 0)
+        }
 
     def build_dataset(self, train_transforms=None, val_transforms=None):
         # Load the dataset using the specified path and device
@@ -84,10 +75,10 @@ class MyTrainer(HQTrainer):
         annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
         annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
 
-        dataset_train = CocoDetection(
+        dataset_train = HQCocoDetection(
             image_path_train, annotation_file_train, transforms=train_transforms
         )
-        dataset_val = CocoDetection(
+        dataset_val = HQCocoDetection(
             image_path_val, annotation_file_val, transforms=val_transforms
         )
         return dataset_train, dataset_val
@@ -98,37 +89,4 @@ class MyTrainer(HQTrainer):
             end_factor=self.args.lr_min / self.args.lr0
         )
 
-
-
-class CocoDetection(torchvision.datasets.CocoDetection):
-    def __init__(self, img_folder, ann_file, transforms):
-        super(CocoDetection, self).__init__(img_folder, ann_file)
-        self._transforms = transforms
-        self.prepare = rfdetr_datasets.coco.ConvertCoco()
-        self.id2names = {}
-        for item in self.coco.cats.values():
-            self.id2names[item['id']] = item['name']
-        logger.info("id 2 names {}", self.id2names)
-
-    def __getitem__(self, idx):
-        img, target = super(CocoDetection, self).__getitem__(idx)
-        image_id = self.ids[idx]
-        target = {'image_id': image_id, 'annotations': target}
-        img, target = self.prepare(img, target)
-        target['img'] = img
-        target['cls'] = target['labels'].numpy()
-        target['bboxes'] = target['boxes'].numpy()
-        target.pop('labels')
-        target.pop('boxes')
-        target['original_shape'] = img.size
-        
-        
-        if self._transforms is not None:
-            target = self._transforms(target)
-
-        return target
-    
-    @property
-    def class_id2names(self):
-        return self.id2names
 

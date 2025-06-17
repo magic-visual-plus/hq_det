@@ -16,7 +16,7 @@ def batch_to_device(batch, device):
     if isinstance(batch, torch.Tensor):
         return batch.to(device)
     elif isinstance(batch, (list, tuple)):
-        return type(batch)(batch_to_device(item, device) for item in batch)
+        return tuple(batch_to_device(item, device) for item in batch)
     elif isinstance(batch, dict):
         return {key: batch_to_device(value, device) for key, value in batch.items()}
     elif isinstance(batch, (DetDataSample, NestedTensor)):

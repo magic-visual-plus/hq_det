@@ -3,7 +3,7 @@ from hq_det.monitor import TrainingVisualizer
 from hq_det.monitor import EmailSender 
 
 
-def run_train_rtmdet(args, class_names):
+def run_train_rfdetr(args, class_names):
     from hq_det.trainer import HQTrainerArguments
     from hq_det.tools.train_rfdetr import MyTrainer
     
@@ -21,9 +21,12 @@ def run_train_rtmdet(args, class_names):
             output_path=args.output_path,
             checkpoint_interval=args.checkpoint_interval,
             image_size=args.image_size,
+            gradient_update_interval=args.gradient_update_interval,
             model_argument={
                 "model": args.load_checkpoint,
                 "model_type": "base",
+                "lr_encoder": 1.5e-4,
+                "lr_component_decay": 0.7,
             },
             eval_class_names=class_names,
         )
@@ -53,6 +56,7 @@ def get_args():
     parser.add_argument('--log_file', '-l', type=str, default=None, help='Path to save log file')
     parser.add_argument('--eval_class_names', type=str, default=None, help='Class names for evaluation')
     parser.add_argument('--experiment_info', type=str, default=None, help='Additional experiment information')
+    parser.add_argument('--gradient_update_interval', '-g', type=int, default=1, help='Number of batches to accumulate gradients before updating')
 
     args = parser.parse_args()
     
@@ -65,15 +69,11 @@ if __name__ == '__main__':
         args.log_file = args.output_path + '/train.log'
     log_redirector = LogRedirector(args.log_file)
     if args.eval_class_names is None:
-        class_names = [
-            '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', 
-            '烫伤', '爆针线', '破损', ' 碰伤', '线头', '脏污', '褶皱(贯穿)', 
-            '褶皱（轻度）', '褶皱（重度）', '重跳针'
-        ]
+        class_names = []
     else:
         class_names = args.eval_class_names.split(',')
     
-    trainer = run_train_rtmdet(args, class_names)
+    trainer = run_train_rfdetr(args, class_names)
 
     csv_path = trainer.results_file
     pdf_path = args.output_path + '/results.pdf'    
@@ -94,4 +94,3 @@ if __name__ == '__main__':
             f"CSV_PATH: {csv_path}\n"\
             f"LOG_PATH: {args.log_file}"
     )
-
