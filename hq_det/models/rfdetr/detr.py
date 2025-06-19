@@ -23,10 +23,10 @@ try:
 except:
     pass
 
-from rfdetr.config import RFDETRBaseConfig, RFDETRLargeConfig, TrainConfig, ModelConfig
-from rfdetr.main import Model, download_pretrain_weights
-from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, MetricsWandBSink
-from rfdetr.util.coco_classes import COCO_CLASSES
+from hq_det.models.rfdetr.config import RFDETRBaseConfig, RFDETRLargeConfig, TrainConfig, ModelConfig
+from hq_det.models.rfdetr.main import Model, download_pretrain_weights
+from hq_det.models.rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, MetricsWandBSink
+from hq_det.models.rfdetr.util.coco_classes import COCO_CLASSES
 
 logger = getLogger(__name__)
 class RFDETR:
@@ -101,7 +101,6 @@ class RFDETR:
             num_classes = len(anns["categories"])
             class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
             self.model.class_names = class_names
-
         if self.model_config.num_classes != num_classes:
             logger.warning(
                 f"num_classes mismatch: model has {self.model_config.num_classes} classes, but your dataset has {num_classes} classes\n"
@@ -118,7 +117,6 @@ class RFDETR:
         
         if "class_names" in train_config and train_config["class_names"] is None:
             train_config["class_names"] = class_names
-
         for k, v in train_config.items():
             if k in model_config:
                 model_config.pop(k)

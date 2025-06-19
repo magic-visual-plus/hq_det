@@ -24,11 +24,11 @@ from torch import nn
 from transformers import AutoModel, AutoProcessor, AutoModelForCausalLM, AutoConfig, AutoBackbone
 from peft import LoraConfig, get_peft_model, PeftModel
 
-from rfdetr.util.misc import NestedTensor, is_main_process
+from hq_det.models.rfdetr.util.misc import NestedTensor, is_main_process
 
-from rfdetr.models.backbone.base import BackboneBase
-from rfdetr.models.backbone.projector import MultiScaleProjector
-from rfdetr.models.backbone.dinov2 import DinoV2
+from hq_det.models.rfdetr.models.backbone.base import BackboneBase
+from hq_det.models.rfdetr.models.backbone.projector import MultiScaleProjector
+from hq_det.models.rfdetr.models.backbone.dinov2 import DinoV2
 
 __all__ = ["Backbone"]
 

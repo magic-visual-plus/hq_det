@@ -181,22 +181,70 @@ class HQTrainer:
 
     def optimizer_step(self, optimizer, scaler, model):
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
-        pass
+    
+    def train_one_epoch(self, 
+            model: torch.nn.Module,
+            bar_train: tqdm,
+            optimizer: torch.optim.Optimizer, 
+            scheduler,
+            scaler, 
+            device: str,
+        ):
+        model.train()
+        train_losses = []
+        train_info = {}
+        
+        for i_batch, batch_data in enumerate(bar_train):
+            # 数据预处理
+            batch_data = torch_utils.batch_to_device(batch_data, device)
+            
+            # 前向传播和损失计算
+            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
+                forward_result = model(batch_data)
+                loss, info = self.compute_loss(model, batch_data, forward_result)
+                
+                # 分布式训练时的梯度同步
+                if len(self.args.devices) > 1:
+                    for k, v in info.items():
+                        if isinstance(v, torch.Tensor):
+                            info[k] = distributed.reduce(v, op=torch.distributed.ReduceOp.SUM)
+            
+            # 更新进度条和统计信息
+            bar_train.set_postfix(**info)
+            train_losses.append(loss.item())
+            train_info = add_stats(train_info, info)
+            
+            # 反向传播
+            scaler.scale(loss / self.args.gradient_update_interval).backward()
+            
+            # 梯度累积更新
+            if i_batch % self.args.gradient_update_interval == 0:
+                self.optimizer_step(optimizer, scaler, model)
+        
+        # 处理最后一个批次
+        if i_batch % self.args.gradient_update_interval != 0:
+            self.optimizer_step(optimizer, scaler, model)
+
+        return train_losses, train_info
+    
+    def before_training_start(self, dataloader_train, dataloader_val, model, optimizer, scheduler, scaler, device):
+        """训练开始前的准备工作完成后的挂钩函数，在开始完整训练前调用，用于执行训练前的最终准备工作"""
+        ...
 
     def run(self, ):
         self.logger.info(self.args)
         device = self.args.device
         num_epoches = self.args.num_epoches
         warmup_epochs = self.args.warmup_epochs
-        batch_size = self.args.batch_size
+        batch_size = self.args.batch_size * self.args.gradient_update_interval
         num_data_workers = self.args.num_data_workers
         lr0 = self.args.lr0
         lr_min = self.args.lr_min
-
+        
         trainsforms_train = self.build_transforms(aug=True)
         trainsforms_val = self.build_transforms(aug=False)
         dataset_train, dataset_val = self.build_dataset(
@@ -214,12 +262,14 @@ class HQTrainer:
                 class_names2id[class_name] for class_name in self.args.eval_class_names if class_name in class_names2id]
             pass
 
+        model = self.build_model()
+        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self.logger.info(f'number of params: {n_parameters}')
+
         if len(eval_class_ids) == 0:
             # cannot find any class, use all class ids to evaluate
             eval_class_ids = list(dataset_train.class_id2names.keys())
             pass
-
-        model = self.build_model()
 
         if len(self.args.devices) > 1:
             # distributed training
@@ -262,66 +312,36 @@ class HQTrainer:
 
         train_info = dict()
 
+        self.before_training_start(
+            dataloader_train,
+            dataloader_val,
+            model,
+            optimizer,
+            scheduler,
+            scaler,
+            device,
+        )
+        self.logger.info("Start training...")
         scheduler.step()
         start_time = time.time()
         for i_epoch in range(num_epoches + warmup_epochs):
             # Training process
-            train_losses = []
             epoch_start_time = time.time()
-
-            model.train()
             if self.is_master():
                 bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
-                pass
             else:
                 bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
                 bar_train.disable = True
-                pass
-
-            train_start_time = time.time()
-            for i_batch, batch_data in enumerate(bar_train):
-                # print(batch_data['bboxes'])
-                batch_data = torch_utils.batch_to_device(batch_data, device)
-                
-                with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
-                    # Forward pass
-                    forward_result = model(batch_data)
-                    # Compute loss
-                    # forward_result = torch_utils.nan_to_num(forward_result)
-                    loss, info = self.compute_loss(model, batch_data, forward_result)
-                    
-                    if len(self.args.devices) > 1:
-                        # distributed training
-                        for k, v in info.items():
-                            if isinstance(v, torch.Tensor):
-                                info[k] = distributed.reduce(v, op=torch.distributed.ReduceOp.SUM)
-                            else:
-                                pass
-                            pass
-                        pass
-                    pass
-                
-                train_losses.append(loss.item())
-                bar_train.set_postfix(
-                    **info
-                )
-                train_info = add_stats(train_info, info)
-                # Backward pass
-
-                scaler.scale(loss / self.args.gradient_update_interval).backward()
-                if i_batch % self.args.gradient_update_interval == 0:
-                    self.optimizer_step(optimizer, scaler, model)
-                    pass
-                else:
-                    pass
-                pass
-            
-            if i_batch % self.args.gradient_update_interval != 0:
-                # if the last batch is not a multiple of gradient update interval, we still need to step the optimizer
-                self.optimizer_step(optimizer, scaler, model)
-                pass
-
-            train_time = time.time() - train_start_time
+            train_losses, one_epoch_train_info = self.train_one_epoch(
+                model, 
+                bar_train, 
+                optimizer, 
+                scheduler,
+                scaler, 
+                device
+            )
+            train_info = add_stats(train_info, one_epoch_train_info)
+            train_time = time.time() - epoch_start_time
             train_hours, remainder = divmod(train_time, 3600)
             train_mins, train_secs = divmod(remainder, 60)
             

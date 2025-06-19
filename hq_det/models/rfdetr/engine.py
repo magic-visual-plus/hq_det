@@ -23,8 +23,8 @@ from typing import Iterable
 
 import torch
 
-import rfdetr.util.misc as utils
-from rfdetr.datasets.coco_eval import CocoEvaluator
+import hq_det.models.rfdetr.util.misc as utils
+from hq_det.models.rfdetr.datasets.coco_eval import CocoEvaluator
 
 try:
     from torch.amp import autocast, GradScaler
@@ -33,7 +33,7 @@ except ImportError:
     from torch.cuda.amp import autocast, GradScaler
     DEPRECATED_AMP = True
 from typing import DefaultDict, List, Callable
-from rfdetr.util.misc import NestedTensor
+from hq_det.models.rfdetr.util.misc import NestedTensor
 import numpy as np
 
 def get_autocast_args(args):
@@ -123,9 +123,7 @@ def train_one_epoch(
                     for k in loss_dict.keys()
                     if k in weight_dict
                 )
-
-
-            scaler.scale(losses).backward()
+            scaler.scale(losses).backward()    
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -149,7 +147,7 @@ def train_one_epoch(
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
 
-        scaler.step(optimizer)
+        scaler.step(optimizer) 
         scaler.update()
         lr_scheduler.step()
         optimizer.zero_grad()

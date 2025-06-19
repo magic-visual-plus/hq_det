@@ -36,15 +36,15 @@ import torch
 from peft import LoraConfig, get_peft_model
 from torch.utils.data import DataLoader, DistributedSampler
 
-import rfdetr.util.misc as utils
-from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
-from rfdetr.engine import evaluate, train_one_epoch
-from rfdetr.models import build_model, build_criterion_and_postprocessors
-from rfdetr.util.benchmark import benchmark
-from rfdetr.util.drop_scheduler import drop_scheduler
-from rfdetr.util.files import download_file
-from rfdetr.util.get_param_dicts import get_param_dict
-from rfdetr.util.utils import ModelEma, BestMetricHolder, clean_state_dict
+import hq_det.models.rfdetr.util.misc as utils
+from hq_det.models.rfdetr.datasets import build_dataset, get_coco_api_from_dataset
+from hq_det.models.rfdetr.engine import evaluate, train_one_epoch
+from hq_det.models.rfdetr.models import build_model, build_criterion_and_postprocessors
+from hq_det.models.rfdetr.util.benchmark import benchmark
+from hq_det.models.rfdetr.util.drop_scheduler import drop_scheduler
+from hq_det.models.rfdetr.util.files import download_file
+from hq_det.models.rfdetr.util.get_param_dicts import get_param_dict
+from hq_det.models.rfdetr.util.utils import ModelEma, BestMetricHolder, clean_state_dict
 
 if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "1"]:
     import torch.multiprocessing
@@ -144,6 +144,9 @@ class Model:
             self.model.backbone[0].encoder = get_peft_model(self.model.backbone[0].encoder, lora_config)
         self.model = self.model.to(self.device)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(args)
+        
+        state_dict = self.model.state_dict()
+
         self.stop_early = False
     
     def reinitialize_detection_head(self, num_classes):
@@ -305,17 +308,26 @@ class Model:
         # for drop
         total_batch_size = effective_batch_size * utils.get_world_size()
         num_training_steps_per_epoch = (len(dataset_train) + total_batch_size - 1) // total_batch_size
+        # 初始化调度器字典，用于存储dropout和drop path的调度策略
         schedules = {}
+        
+        # 如果设置了dropout参数大于0，创建dropout调度器
         if args.dropout > 0:
+            # 创建dropout调度器，传入初始dropout值、总训练轮数、每轮训练步数、
+            # 截止轮数、drop模式和drop调度策略
             schedules['do'] = drop_scheduler(
                 args.dropout, args.epochs, num_training_steps_per_epoch,
                 args.cutoff_epoch, args.drop_mode, args.drop_schedule)
+            # 打印dropout调度器的最小值和最大值，保留7位小数
             print("Min DO = %.7f, Max DO = %.7f" % (min(schedules['do']), max(schedules['do'])))
 
+        # 如果设置了drop path参数大于0，创建drop path调度器
         if args.drop_path > 0:
+            # 创建drop path调度器，参数与dropout调度器类似
             schedules['dp'] = drop_scheduler(
                 args.drop_path, args.epochs, num_training_steps_per_epoch,
                 args.cutoff_epoch, args.drop_mode, args.drop_schedule)
+            # 打印drop path调度器的最小值和最大值，保留7位小数
             print("Min DP = %.7f, Max DP = %.7f" % (min(schedules['dp']), max(schedules['dp'])))
 
         print("Start training")

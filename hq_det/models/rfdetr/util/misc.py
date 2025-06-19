@@ -303,8 +303,8 @@ def _max_by_axis(the_list):
 
 class NestedTensor(object):
     def __init__(self, tensors, mask: Optional[Tensor]):
-        self.tensors = tensors
-        self.mask = mask
+        self.tensors = tensors.clone() if tensors is not None else None
+        self.mask = mask.clone() if mask is not None else None
 
     def to(self, device):
         # type: (Device) -> NestedTensor # noqa
@@ -325,27 +325,59 @@ class NestedTensor(object):
 
 
 def nested_tensor_from_tensor_list(tensor_list: List[Tensor]):
-    # TODO make this more general
+    """
+    将张量列表转换为嵌套张量(NestedTensor)
+    
+    Args:
+        tensor_list: 包含多个张量的列表，每个张量应该是3维的(C, H, W)
+    
+    Returns:
+        NestedTensor: 包含填充后的张量和对应掩码的嵌套张量对象
+    
+    Note:
+        - 该函数主要用于处理不同尺寸的图像张量
+        - 通过填充将不同尺寸的张量统一到最大尺寸
+        - 生成对应的掩码来标识有效区域
+    """
+    # TODO: 使函数更加通用，支持更多维度
     if tensor_list[0].ndim == 3:
+        # 检查是否处于ONNX追踪模式
         if torchvision._is_tracing():
-            # nested_tensor_from_tensor_list() does not export well to ONNX
-            # call _onnx_nested_tensor_from_tensor_list() instead
+            # nested_tensor_from_tensor_list() 在ONNX导出时效果不佳
+            # 调用 _onnx_nested_tensor_from_tensor_list() 替代
             return _onnx_nested_tensor_from_tensor_list(tensor_list)
 
-        # TODO make it support different-sized images
+        # TODO: 支持不同尺寸的图像
+        # 计算所有张量在每个维度上的最大尺寸
         max_size = _max_by_axis([list(img.shape) for img in tensor_list])
+        # 确保每个维度都能被56整除
+        max_size = [max_size[0]] + [(size + 55) // 56 * 56 for size in max_size[1:]]
         # min_size = tuple(min(s) for s in zip(*[img.shape for img in tensor_list]))
+        
+        # 构建批次形状: [batch_size, channels, max_height, max_width]
         batch_shape = [len(tensor_list)] + max_size
         b, c, h, w = batch_shape
+        
+        # 获取第一个张量的数据类型和设备信息
         dtype = tensor_list[0].dtype
         device = tensor_list[0].device
+        
+        # 创建填充后的张量，初始化为零
         tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
+        # 创建掩码张量，初始化为True(表示填充区域)
         mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
+        
+        # 遍历每个原始张量，进行填充和掩码设置
         for img, pad_img, m in zip(tensor_list, tensor, mask):
+            # 将原始张量复制到填充张量的对应位置
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
+            # 将有效区域(非填充区域)的掩码设置为False
             m[: img.shape[1], :img.shape[2]] = False
     else:
+        # 目前只支持3维张量
         raise ValueError('not supported')
+    
+    # 返回包含填充张量和掩码的嵌套张量对象
     return NestedTensor(tensor, mask)
 
 

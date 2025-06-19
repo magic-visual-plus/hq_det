@@ -1,6 +1,30 @@
+import os
+import random
+import numpy as np
+import torch
 from hq_det.monitor import LogRedirector
 from hq_det.monitor import TrainingVisualizer
 from hq_det.monitor import EmailSender 
+
+
+def set_seed(seed=42):
+    """设置随机种子以确保实验的可重复性
+    
+    Args:
+        seed (int): 随机种子值，默认为42
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    
+    print(f"Random seed has been set to: {seed}")
 
 
 def run_train_rfdetr(args, class_names):
@@ -9,26 +33,26 @@ def run_train_rfdetr(args, class_names):
     
     trainer = MyTrainer(
         HQTrainerArguments(
-            data_path=args.data_path,
-            num_epoches=args.num_epoches,
-            warmup_epochs=args.warmup_epochs,
-            num_data_workers=args.num_data_workers,
-            lr0=args.lr0,
-            lr_min=args.lr_min,
-            batch_size=args.batch_size,
-            device=args.device,
-            checkpoint_path=args.output_path,
-            output_path=args.output_path,
-            checkpoint_interval=args.checkpoint_interval,
-            image_size=args.image_size,
-            gradient_update_interval=args.gradient_update_interval,
+            data_path=args.data_path,   # 数据集路径
+            num_epoches=args.num_epoches,  # 训练轮数
+            warmup_epochs=args.warmup_epochs,  # 预热轮数
+            num_data_workers=args.num_data_workers,  # 数据加载线程数
+            lr0=args.lr0,  # 初始学习率
+            lr_min=args.lr_min,  # 最小学习率
+            batch_size=args.batch_size,  # 批量大小
+            device=args.device,  # 设备
+            checkpoint_path=args.output_path,  # 检查点路径
+            output_path=args.output_path,  # 输出路径
+            checkpoint_interval=args.checkpoint_interval,  # 检查点间隔
+            image_size=args.image_size,  # 图像大小
+            gradient_update_interval=args.gradient_update_interval,  # 梯度更新间隔
             model_argument={
-                "model": args.load_checkpoint,
-                "model_type": "base",
-                "lr_encoder": 1.5e-4,
-                "lr_component_decay": 0.7,
+                "model": args.load_checkpoint,  # 加载的模型路径
+                "model_type": "base",  # 模型类型
+                "lr_encoder": 1.5e-4,  # 编码器学习率
+                "lr_component_decay": 0.7,  # 组件衰减率
             },
-            eval_class_names=class_names,
+            eval_class_names=class_names,   # 评估类别名称
         )
     )
 
@@ -57,6 +81,7 @@ def get_args():
     parser.add_argument('--eval_class_names', type=str, default=None, help='Class names for evaluation')
     parser.add_argument('--experiment_info', type=str, default=None, help='Additional experiment information')
     parser.add_argument('--gradient_update_interval', '-g', type=int, default=1, help='Number of batches to accumulate gradients before updating')
+    parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility (None for no seed)')
 
     args = parser.parse_args()
     
@@ -65,6 +90,11 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
+    
+    # 设置随机种子（如果提供）
+    if args.seed is not None:
+        set_seed(args.seed)
+    
     if args.log_file is None:
         args.log_file = args.output_path + '/train.log'
     log_redirector = LogRedirector(args.log_file)
@@ -87,7 +117,7 @@ if __name__ == '__main__':
     )
     email_sender.send_experiment_notification(
         receiver_email='jiangchongyang@digitalpredict.cn',
-        experiment_name='RTMDet Training Results',
+        experiment_name='RF-DETR Training Results',
         attachments=[pdf_path, csv_path, args.log_file],
         additional_info=f"{args.experiment_info}\n"\
             f"PDF_PATH: {pdf_path}\n"\

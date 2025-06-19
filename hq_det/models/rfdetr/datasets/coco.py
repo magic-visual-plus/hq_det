@@ -24,7 +24,7 @@ import torch
 import torch.utils.data
 import torchvision
 
-import rfdetr.datasets.transforms as T
+import hq_det.models.rfdetr.datasets.transforms as T
 
 
 def compute_multi_scale_scales(resolution, expanded_scales=False):
@@ -53,6 +53,9 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self._transforms = transforms
         self.prepare = ConvertCoco()
+        self.id2names = {}
+        for item in self.coco.cats.values():
+            self.id2names[item['id']] = item['name']
 
     def __getitem__(self, idx):
         img, target = super(CocoDetection, self).__getitem__(idx)
@@ -62,6 +65,10 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         if self._transforms is not None:
             img, target = self._transforms(img, target)
         return img, target
+
+    @property
+    def class_id2names(self):
+        return self.id2names
 
 
 class ConvertCoco(object):
@@ -232,7 +239,7 @@ def build_roboflow(image_set, args, resolution):
     PATHS = {
         "train": (root / "train", root / "train" / "_annotations.coco.json"),
         "val": (root /  "valid", root / "valid" / "_annotations.coco.json"),
-        "test": (root / "test", root / "test" / "_annotations.coco.json"),
+        "test": (root / "valid", root / "valid" / "_annotations.coco.json"),
     }
     
     img_folder, ann_file = PATHS[image_set.split("_")[0]]

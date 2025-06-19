@@ -20,7 +20,7 @@ import math
 import torch
 from torch import nn
 
-from rfdetr.util.misc import NestedTensor
+from hq_det.models.rfdetr.util.misc import NestedTensor
 
 
 class PositionEmbeddingSine(nn.Module):

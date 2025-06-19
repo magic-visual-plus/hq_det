@@ -18,6 +18,7 @@ from hq_det.models.base import HQModel
 from hq_det.models.rfdetr.util.misc import NestedTensor
 from hq_det.models.rfdetr.models.backbone import Joiner
 from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
+from hq_det.models.rfdetr.util.get_param_dicts import get_param_dict
 
 
 class HQRFDETR(HQModel):
@@ -40,10 +41,12 @@ class HQRFDETR(HQModel):
             self.model_config = RFDETRLargeConfig(**kwargs)
         else:
             raise ValueError(f"Invalid model type: {model_type}")
+        self.model = self.load_model(self.model_config)
         self.train_config = TrainConfig(**kwargs)
-        self.args = populate_args({**self.model_config.dict(), **self.train_config.dict()})
-        print(self.args)
-        self.model, self.criterion, self.postprocessors = self.load_model(self.model_config)
+        all_kwargs = self.train_from_config(self.train_config, **kwargs)
+        self.args = populate_args(**all_kwargs)
+        utils.init_distributed_mode(self.args)
+        self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.args)
 
     def get_class_names(self):
         names = ['' for _ in range(len(self.id2names))]
@@ -51,9 +54,29 @@ class HQRFDETR(HQModel):
             names[k] = v
         return names
 
+    def train_from_config(self, config: TrainConfig, **kwargs):
+        class_names = self.get_class_names()
+        num_classes = len(class_names)
+        train_config = config.dict()
+        model_config = self.model_config.dict()
+        model_config.pop("num_classes")
+        if "class_names" in model_config:
+            model_config.pop("class_names")
+        
+        if "class_names" in train_config and train_config["class_names"] is None:
+            train_config["class_names"] = class_names
+        for k, v in train_config.items():
+            if k in model_config:
+                model_config.pop(k)
+            if k in kwargs:
+                kwargs.pop(k)
+        all_kwargs = {**model_config, **train_config, **kwargs, "num_classes": num_classes}
+
+        return all_kwargs 
+
     def load_model(self, model_config: ModelConfig):
         model_cls =  RFDETR_Model(**model_config.dict())
-        return model_cls.model, model_cls.criterion, model_cls.postprocessors
+        return model_cls.model
 
     def forward(self, batch_data: Dict):
         samples = nested_tensor_from_tensor_list(batch_data['img'])
@@ -76,12 +99,16 @@ class HQRFDETR(HQModel):
                 record.bboxes = pred_bboxes
                 record.cls = pred_cls
                 record.scores = pred_scores
-                record.image_id = batch_data['targets'][i]['image_id']
+                record.image_id = batch_data['image_id'][i]
             results.append(record)
         return results
         
 
     def compute_loss(self, batch_data: Dict, forward_result: Tuple) -> Tuple[torch.FloatTensor, Dict]:
+        if self.training:
+            self.criterion.train()
+        else:
+            self.criterion.eval()
         targets = batch_data['targets']
         
         loss_dict = self.criterion(forward_result, targets)
@@ -125,10 +152,14 @@ class HQRFDETR(HQModel):
             # 'loss_giou_enc': loss_dict['loss_giou_enc'].item(),
             # 'weight_dict': weight_dict,
         }
+
         return losses, info
     
     def get_param_dict(self, args: HQTrainerArguments):
         model = self.model.module if hasattr(self.model, 'module') else self.model
+        self.args.lr = args.lr0
+        
+        return get_param_dict(self.args, model)
         backbone = model.backbone[0]
         backbone_named_param_lr_pairs = backbone.get_named_param_lr_pairs(self.args, prefix="backbone.0")
         backbone_param_lr_pairs = [param_dict for _, param_dict in backbone_named_param_lr_pairs.items()]
