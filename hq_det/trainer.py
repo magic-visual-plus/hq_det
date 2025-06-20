@@ -4,15 +4,12 @@ import time
 import torch.distributed
 from . import torch_utils
 import torch.utils.data
-import pydantic
 import loguru
 import numpy as np
 from . import augment
 from . import evaluate
-from . import box_utils
 from .common import PredictionResult
 from tqdm import tqdm
-from .models.base import HQModel
 import torch
 from .common import HQTrainerArguments
 from torch import distributed
@@ -84,206 +81,296 @@ def extract_ground_truth(batch_data):
     return gt_records
 
 
+class DefaultAugmentation:
+    """default data augmentation class"""
+    
+    @staticmethod
+    def get_train_transforms(image_size):
+        """get train data augmentation"""
+        transforms = []
+        transforms.append(augment.ToNumpy())
+        
+        # 数据增强
+        transforms.append(augment.RandomHorizontalFlip())
+        transforms.append(augment.RandomVerticalFlip())
+        transforms.append(augment.RandomGrayScale())
+        transforms.append(augment.RandomShuffleChannel())
+        transforms.append(augment.RandomRotate90(p=0.1))
+        transforms.append(augment.RandomRotate(p=0.1))
+        transforms.append(augment.RandomAffine(p=0.1))
+        transforms.append(augment.RandomPerspective(p=0.1))
+        transforms.append(augment.RandomNoise(p=0.1))
+        transforms.append(augment.RandomBrightness(p=0.1))
+        transforms.append(augment.RandomCrop(p=0.1))
+        transforms.append(augment.RandomResize(p=0.1))
+        
+        # basic processing
+        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.FilterSmallBox())
+        transforms.append(augment.Format())
+        
+        return augment.Compose(transforms)
+    
+    @staticmethod
+    def get_val_transforms(image_size):
+        """get validation data augmentation"""
+        transforms = []
+        transforms.append(augment.ToNumpy())
+        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.FilterSmallBox())
+        transforms.append(augment.Format())
+        
+        return augment.Compose(transforms)
+
+
 class HQTrainer:
     def __init__(self, args: HQTrainerArguments):
         self.args = args
         self.logger = loguru.logger
         self.results_file = os.path.join(args.output_path, 'results.csv')
+        self.training_state = {
+            'current_epoch': 0,     # current epoch
+            'best_metric': 0.0,     # best validation metric
+            'train_info': {},       # train metrics
+            'val_info': {},         # validation metrics
+        }
+        
+        # 在初始化时设置训练环境
+        self.setup_training_environment()
+
+    def setup_training_environment(self):
+        """setup training environment"""
+        self.logger.info(self.args)
+        
+        # setup datasets and transforms
+        self.dataset_train, self.dataset_val = self._setup_datasets_and_transforms()
+        
+        # setup class configuration
+        self.eval_class_ids = self._setup_class_configuration()
+        
+        # setup model
+        self.model = self._setup_model()
+        
+        # setup distributed training
+        self.model, self.device, self.sampler_train, self.sampler_val = self._setup_distributed_training()
+        
+        # setup dataloaders
+        self.dataloader_train, self.dataloader_val = self._setup_dataloaders()
+        
+        # setup optimization components
+        self.optimizer, self.scheduler, self.scaler = self._setup_optimization_components()
+        
+        # setup output directories
+        self._setup_output_directories()
 
     def build_dataset(self, train_transforms, val_transforms):
-        pass
+        raise NotImplementedError
 
     def build_model(self):
-        pass
-
+        raise NotImplementedError
+    
     def collate_fn(self, batch):
-        # print(batch)
-        pass
+        raise NotImplementedError
 
     def build_transforms(self, aug=True):
-        transforms = []
-
-        transforms.append(augment.ToNumpy())
-
+        """build transforms"""
         if aug:
-            transforms.append(augment.RandomHorizontalFlip())
-            transforms.append(augment.RandomVerticalFlip())
-            transforms.append(augment.RandomGrayScale())
-            transforms.append(augment.RandomShuffleChannel())
-            transforms.append(augment.RandomRotate90(p=0.1))
-            transforms.append(augment.RandomRotate(p=0.1))
-            transforms.append(augment.RandomAffine(p=0.1))
-            transforms.append(augment.RandomPerspective(p=0.1))
-            transforms.append(augment.RandomNoise(p=0.1))
-            transforms.append(augment.RandomBrightness(p=0.1))
-            transforms.append(augment.RandomCrop(p=0.1))
-            transforms.append(augment.RandomResize(p=0.1))
-            pass
+            return DefaultAugmentation.get_train_transforms(self.args.image_size)
         else:
-            pass
-
-        transforms.append(augment.Resize(max_size=self.args.image_size))
-        transforms.append(augment.FilterSmallBox())
-        transforms.append(augment.Format())
-
-        return augment.Compose(transforms)
-        pass
+            return DefaultAugmentation.get_val_transforms(self.args.image_size)
 
     def build_optimizer(self, model):
+        """build optimizer"""
         if isinstance(model, DDP):
             model = model.module
-            pass
         param_dict = model.get_param_dict(self.args)
         return torch.optim.AdamW(param_dict, lr=self.args.lr0)
 
-    def get_lr_multi(self, iepoch):
-        lr0 = self.args.lr0
-        lr_min = self.args.lr_min
-        warmup_epochs = self.args.warmup_epochs
-        num_epoches = self.args.num_epoches
-
-        if iepoch < warmup_epochs:
-            lr = lr0 * (iepoch + 1) / warmup_epochs
-        else:
-            lr = lr0 * (1.0 - min(iepoch, num_epoches) / num_epoches)
-            pass
-        
-        return max(lr, lr_min)
-        pass
-
     def build_scheduler(self, optimizer):
-        # return torch.optim.lr_scheduler.StepLR(optimizer, step_size=40, gamma=0.5)
-        return torch.optim.lr_scheduler.LambdaLR(
-            optimizer,
-            lr_lambda=self.get_lr_multi,
-        )
+        raise NotImplementedError
     
-    def is_master(self,):
+    def is_master(self):
+        """check if is master"""
         return len(self.args.devices) == 1 or (torch.distributed.is_initialized() and torch.distributed.get_rank() == 0)
     
     def compute_loss(self, model, batch_data, forward_result):
+        """compute loss"""
         if isinstance(model, DDP):
             model = model.module
-            pass
         return model.compute_loss(batch_data, forward_result)
     
     def postprocess(self, model, batch_data, forward_result):
+        """postprocess"""
         if isinstance(model, DDP):
             model = model.module
-            pass
         return model.postprocess(forward_result, batch_data)
     
     def save_model(self, model, path):
+        """save model"""
         if isinstance(model, DDP):
             model = model.module
         model.save(path)
-        pass
 
     def optimizer_step(self, optimizer, scaler, model):
+        """
+        single step training
+        Args:
+            optimizer: optimizer
+            scaler: gradient scaler
+            model: model
+        Returns:
+            None    
+        """
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
-    
-    def train_one_epoch(self, 
-            model: torch.nn.Module,
-            bar_train: tqdm,
-            optimizer: torch.optim.Optimizer, 
-            scheduler,
-            scaler, 
-            device: str,
-        ):
-        model.train()
+
+    def train_step(self, model, batch_data, optimizer, scaler, device):
+        # data preprocessing
+        batch_data = torch_utils.batch_to_device(batch_data, device)
+        # forward and loss computation
+        with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
+            forward_result = model(batch_data)
+            loss, info = self.compute_loss(model, batch_data, forward_result)
+            
+            # gradient synchronization for distributed training
+            if len(self.args.devices) > 1:
+                for k, v in info.items():
+                    if isinstance(v, torch.Tensor):
+                        info[k] = distributed.reduce(v, op=torch.distributed.ReduceOp.SUM)
+        
+        # backward
+        scaler.scale(loss / self.args.gradient_update_interval).backward()
+        
+        return loss, info
+
+    def valid_step(self, model, batch_data, device):
+        batch_data = torch_utils.batch_to_device(batch_data, device)
+        
+        with torch.no_grad():
+            forward_result = model(batch_data)
+            loss, info = self.compute_loss(model, batch_data, forward_result)
+            preds = self.postprocess(model, batch_data, forward_result)
+            
+            # set image id for prediction results
+            for pred, image_id in zip(preds, batch_data['image_id']):
+                pred.image_id = image_id
+            
+            return loss, info, preds
+
+    def train_epoch(self, epoch):
+        self.model.train()
         train_losses = []
         train_info = {}
         
+        # create progress bar
+        bar_train = self._create_progress_bar(
+            self.dataloader_train, 
+            f"Train Epoch[{epoch}/{self.args.num_epoches + self.args.warmup_epochs - 1}]"
+        )
+        
         for i_batch, batch_data in enumerate(bar_train):
-            # 数据预处理
-            batch_data = torch_utils.batch_to_device(batch_data, device)
+            # train step
+            loss, info = self.train_step(
+                self.model, batch_data, self.optimizer, self.scaler, self.device
+            )
             
-            # 前向传播和损失计算
-            with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
-                forward_result = model(batch_data)
-                loss, info = self.compute_loss(model, batch_data, forward_result)
-                
-                # 分布式训练时的梯度同步
-                if len(self.args.devices) > 1:
-                    for k, v in info.items():
-                        if isinstance(v, torch.Tensor):
-                            info[k] = distributed.reduce(v, op=torch.distributed.ReduceOp.SUM)
-            
-            # 更新进度条和统计信息
+            # update progress bar and statistics
             bar_train.set_postfix(**info)
             train_losses.append(loss.item())
             train_info = add_stats(train_info, info)
             
-            # 反向传播
-            scaler.scale(loss / self.args.gradient_update_interval).backward()
-            
-            # 梯度累积更新
+            # gradient accumulation
             if i_batch % self.args.gradient_update_interval == 0:
-                self.optimizer_step(optimizer, scaler, model)
+                self.optimizer_step(self.optimizer, self.scaler, self.model)
         
-        # 处理最后一个批次
+        # process last batch
         if i_batch % self.args.gradient_update_interval != 0:
-            self.optimizer_step(optimizer, scaler, model)
+            self.optimizer_step(self.optimizer, self.scaler, self.model)
 
         return train_losses, train_info
-    
-    def before_training_start(self, dataloader_train, dataloader_val, model, optimizer, scheduler, scaler, device):
-        """训练开始前的准备工作完成后的挂钩函数，在开始完整训练前调用，用于执行训练前的最终准备工作"""
-        ...
 
-    def run(self, ):
-        self.logger.info(self.args)
-        device = self.args.device
-        num_epoches = self.args.num_epoches
-        warmup_epochs = self.args.warmup_epochs
-        batch_size = self.args.batch_size * self.args.gradient_update_interval
-        num_data_workers = self.args.num_data_workers
-        lr0 = self.args.lr0
-        lr_min = self.args.lr_min
+    def valid_epoch(self):
+        """validate one epoch"""
+        self.model.eval()
+        val_losses = []
+        val_info = dict()
+        all_preds = []
+        all_gts = []
+
+        if self.is_master():
+            bar_val = self._create_progress_bar(self.dataloader_val, "Valid Epoch")
+            
+            for i_batch, batch_data in enumerate(bar_val):
+                loss, info, preds = self.valid_step(self.model, batch_data, self.device)
+                
+                val_info = add_stats(val_info, info)
+                val_losses.append(loss.item())
+                all_preds.extend(preds)
+                all_gts.extend(extract_ground_truth(batch_data))
+                
+                bar_val.set_postfix(**info)
+            
+            val_info = divide_stats(val_info, len(self.dataloader_val))
+            stat = self._process_validation_results(all_preds, all_gts, self.eval_class_ids)
+            
+            return val_losses, val_info, stat
         
+        return [], {}, {}
+
+    def _setup_datasets_and_transforms(self):
+        """setup datasets and transforms"""
         trainsforms_train = self.build_transforms(aug=True)
         trainsforms_val = self.build_transforms(aug=False)
         dataset_train, dataset_val = self.build_dataset(
             trainsforms_train, trainsforms_val)
+        return dataset_train, dataset_val
 
+    def _setup_class_configuration(self):
+        """setup class configuration"""
         if self.args.class_id2names is None:
-            self.args.class_id2names = dataset_train.class_id2names
-            pass
+            self.args.class_id2names = self.dataset_train.class_id2names
 
         if self.args.eval_class_names is None:
-            eval_class_ids = list(dataset_train.class_id2names.keys())
+            eval_class_ids = list(self.dataset_train.class_id2names.keys())
         else:
             class_names2id = {v: k for k, v in self.args.class_id2names.items()}
             eval_class_ids = [
                 class_names2id[class_name] for class_name in self.args.eval_class_names if class_name in class_names2id]
-            pass
-
-        model = self.build_model()
-        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        self.logger.info(f'number of params: {n_parameters}')
 
         if len(eval_class_ids) == 0:
             # cannot find any class, use all class ids to evaluate
-            eval_class_ids = list(dataset_train.class_id2names.keys())
-            pass
+            eval_class_ids = list(self.dataset_train.class_id2names.keys())
+        
+        return eval_class_ids
 
+    def _setup_model(self):
+        """setup model"""
+        model = self.build_model()
+        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self.logger.info(f'number of params: {n_parameters}')
+        return model
+
+    def _setup_distributed_training(self):
+        """setup distributed training"""
         if len(self.args.devices) > 1:
             # distributed training
+            self.logger.info("Setting up distributed training environment...")
             torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
             torch.distributed.init_process_group("nccl")
             rank = distributed.get_rank()
             # create model and move it to GPU with id rank
             device_id = rank % torch.cuda.device_count()
             device = f'cuda:{device_id}'
-            model.to(device)
-            model = DDP(model, device_ids=[device_id])
+            self.model.to(device)
+            model = DDP(self.model, device_ids=[device_id])
+            
+            self.logger.info(f"Distributed training initialized - Rank: {rank}, Device: {device}, World Size: {torch.distributed.get_world_size()}")
             
             sampler_train = torch.utils.data.distributed.DistributedSampler(
-                dataset_train,
+                self.dataset_train,
                 num_replicas=torch.distributed.get_world_size(),
                 rank=rank,
                 shuffle=True,
@@ -291,145 +378,243 @@ class HQTrainer:
             sampler_val = None
         else:
             # single GPU training
-            sampler_train = torch.utils.data.RandomSampler(dataset_train)
-            sampler_val = torch.utils.data.SequentialSampler(dataset_val)
+            self.logger.info("Setting up single GPU training environment...")
+            sampler_train = torch.utils.data.RandomSampler(self.dataset_train)
+            sampler_val = torch.utils.data.SequentialSampler(self.dataset_val)
             device = self.args.device[0] if not isinstance(self.args.device, str) else self.args.device
-            model.to(device)
-            pass
+            self.model.to(device)
+            model = self.model
+            
+            self.logger.info(f"Single GPU training initialized - Device: {device}")
+        
+        return model, device, sampler_train, sampler_val
 
+    def _setup_dataloaders(self):
+        """setup dataloaders"""
         dataloader_train = torch.utils.data.DataLoader(
-            dataset_train, batch_size=batch_size, num_workers=num_data_workers, 
-            collate_fn=self.collate_fn, sampler=sampler_train)
+            self.dataset_train, batch_size=self.args.batch_size, num_workers=self.args.num_data_workers, 
+            collate_fn=self.collate_fn, sampler=self.sampler_train)
         dataloader_val = torch.utils.data.DataLoader(
-            dataset_val, batch_size=batch_size, num_workers=num_data_workers,
-            collate_fn=self.collate_fn, sampler=sampler_val)
+            self.dataset_val, batch_size=self.args.batch_size, num_workers=self.args.num_data_workers,
+            collate_fn=self.collate_fn, sampler=self.sampler_val)
+        return dataloader_train, dataloader_val
 
-        optimizer = self.build_optimizer(model)
+    def _setup_optimization_components(self):
+        """setup optimizer, scheduler and gradient scaler"""
+        optimizer = self.build_optimizer(self.model)
         scheduler = self.build_scheduler(optimizer)
         scaler = torch.cuda.amp.GradScaler(enabled=self.args.enable_amp)
+        return optimizer, scheduler, scaler
 
+    def _setup_output_directories(self):
+        """setup output directories"""
         os.makedirs(self.args.checkpoint_path, exist_ok=True)
 
-        train_info = dict()
+    def _update_training_state(self, epoch, train_info, val_info, metric=None):
+        """update training state"""
+        self.training_state['current_epoch'] = epoch
+        self.training_state['train_info'] = train_info
+        self.training_state['val_info'] = val_info
+        if metric is not None and metric > self.training_state['best_metric']:
+            self.training_state['best_metric'] = metric
 
-        self.before_training_start(
-            dataloader_train,
-            dataloader_val,
-            model,
-            optimizer,
-            scheduler,
-            scaler,
-            device,
+    def _should_save_best_model(self, metric):
+        """check if best model should be saved"""
+        return metric > self.training_state['best_metric']
+
+    def _save_best_model(self, model, metric):
+        """save best model"""
+        if self._should_save_best_model(metric) and self.is_master():
+            best_model_path = os.path.join(self.args.checkpoint_path, 'best_model')
+            self.save_model(model, best_model_path)
+            self.logger.info(f'New best model saved with metric: {metric:.4f}')
+
+    def _create_progress_bar(self, dataloader, desc, disable=False):
+        """create progress bar"""
+        if self.is_master() and not disable:
+            return tqdm(dataloader, desc=desc)
+        else:
+            bar = tqdm(dataloader, desc=desc)
+            bar.disable = True
+            return bar
+
+    def _compute_epoch_metrics(self, train_losses, val_losses, val_info):
+        """compute epoch metrics"""
+        metrics = {
+            'train_loss': np.mean(train_losses) if train_losses else 0.0,
+            'val_loss': np.mean(val_losses) if val_losses else 0.0,
+        }
+        
+        # add validation metrics
+        for key, value in val_info.items():
+            if isinstance(value, (int, float)):
+                metrics[f'val_{key}'] = value
+        
+        return metrics
+
+    def _process_validation_results(self, all_preds, all_gts, eval_class_ids):
+        """process validation results"""
+        if not all_preds or not all_gts:
+            return {}
+        
+        # 评估检测结果
+        stat = evaluate.eval_detection_result_by_class_id(
+            all_gts, all_preds, eval_class_ids
         )
+        
+        return stat
+
+    def _log_learning_rates(self, optimizer):
+        """log learning rates"""
+        lr_info = {}
+        for i, param_group in enumerate(optimizer.param_groups):
+            lr_info[f'lr_group_{i}'] = param_group['lr']
+        return lr_info
+
+    def _create_epoch_summary(self, i_epoch, train_losses, val_losses, 
+                            val_info, train_time, val_time, epoch_time, stat):
+        """create epoch summary"""
+        lr_info = self._log_learning_rates(self.optimizer)
+        metrics = self._compute_epoch_metrics(train_losses, val_losses, val_info)
+        
+        summary = {
+            'epoch': i_epoch,
+            'train_loss': metrics['train_loss'],
+            'val_loss': metrics['val_loss'],
+            'train_time': train_time,
+            'val_time': val_time,
+            'epoch_time': epoch_time,
+            'stat': stat,
+            'lr_info': lr_info,
+            'val_info': val_info,
+        }
+        
+        return summary
+
+    def _log_epoch_summary(self, summary):
+        """log epoch summary"""
+        if not self.is_master():
+            return
+        
+        epoch = summary['epoch']
+        train_loss = summary['train_loss']
+        val_loss = summary['val_loss']
+        val_info = summary['val_info']
+        lr_info = summary['lr_info']
+        train_time = summary['train_time']
+        val_time = summary['val_time']
+        epoch_time = summary['epoch_time']
+        
+        # log learning rate
+        lr_str = ', '.join([f'{k}: {v:.6f}' for k, v in lr_info.items()])
+        
+        # log loss and metrics
+        self.logger.info(
+            f'Epoch {epoch}, {lr_str}, train loss: {train_loss:.4f}, valid loss: {val_loss:.4f}, '
+            f'{format_stats(val_info)}'
+        )
+        
+        # log time information
+        train_h, train_m, train_s = train_time
+        val_h, val_m, val_s = val_time
+        epoch_h, epoch_m, epoch_s = epoch_time
+        
+        self.logger.info(
+            f'Elapsed Time: Train {train_h:02d}:{train_m:02d}:{train_s:02d} | '
+            f'Valid {val_h:02d}:{val_m:02d}:{val_s:02d} | '
+            f'Epoch {epoch_h:02d}:{epoch_m:02d}:{epoch_s:02d}'
+        )
+
+    def _save_checkpoint(self, model):
+        """save checkpoint"""
+        if self.is_master():
+            checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
+            self.save_model(model, checkpoint_path)
+
+    def _format_time(self, time_seconds):
+        """format time"""
+        hours, remainder = divmod(time_seconds, 3600)
+        mins, secs = divmod(remainder, 60)
+        return int(hours), int(mins), int(secs)
+
+    def _check_early_stopping(self, val_loss, patience=10):
+        """check if early stopping is needed"""
+        if not hasattr(self, '_early_stopping_counter'):
+            self._early_stopping_counter = 0
+            self._best_val_loss = float('inf')
+        
+        if val_loss < self._best_val_loss:
+            self._best_val_loss = val_loss
+            self._early_stopping_counter = 0
+        else:
+            self._early_stopping_counter += 1
+        
+        return self._early_stopping_counter >= patience
+
+    def run(self):
+        """main training process"""
         self.logger.info("Start training...")
-        scheduler.step()
+        self.scheduler.step()
         start_time = time.time()
-        for i_epoch in range(num_epoches + warmup_epochs):
-            # Training process
+        
+        for i_epoch in range(self.args.num_epoches + self.args.warmup_epochs):
             epoch_start_time = time.time()
-            if self.is_master():
-                bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
-            else:
-                bar_train = tqdm(dataloader_train, desc=f"Train Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
-                bar_train.disable = True
-            train_losses, one_epoch_train_info = self.train_one_epoch(
-                model, 
-                bar_train, 
-                optimizer, 
-                scheduler,
-                scaler, 
-                device
-            )
-            train_info = add_stats(train_info, one_epoch_train_info)
+            
+            # Training process
+            train_losses, train_info = self.train_epoch(i_epoch)
             train_time = time.time() - epoch_start_time
-            train_hours, remainder = divmod(train_time, 3600)
-            train_mins, train_secs = divmod(remainder, 60)
+            train_time_formatted = self._format_time(train_time)
             
             # Validation process
-            model.eval()
-            val_losses = []
-            val_info = dict()
-            gt_records = []
-            pred_records = []
-
+            val_start_time = time.time()
+            val_losses, val_info, stat = self.valid_epoch()
+            val_time = time.time() - val_start_time
+            val_time_formatted = self._format_time(val_time)
+            
+            # Calculate epoch time
+            epoch_time = time.time() - epoch_start_time
+            epoch_time_formatted = self._format_time(epoch_time)
+            
+            # Create and log epoch summary
+            summary = self._create_epoch_summary(
+                i_epoch, train_losses, val_losses, val_info,
+                train_time_formatted, val_time_formatted, epoch_time_formatted, stat
+            )
+            
+            self._log_epoch_summary(summary)
+            
+            # Update training state
+            self._update_training_state(i_epoch, train_info, val_info, stat.get('mAP', 0.0))
+            
+            # Save results and checkpoints
             if self.is_master():
-                # only rank 0 will do validation and model saving
-                val_start_time = time.time()
-                bar_val = tqdm(dataloader_val, desc=f"Valid Epoch[{i_epoch}/{num_epoches + warmup_epochs - 1}]")
-                for i_batch, batch_data in enumerate(bar_val):
-                    batch_data = torch_utils.batch_to_device(batch_data, device)
-
-                    with torch.no_grad():
-                        forward_result = model(batch_data)
-                        # Compute loss
-                        loss, info_ = self.compute_loss(model, batch_data, forward_result)
-                        preds = self.postprocess(model, batch_data, forward_result)
-                        for pred, image_id in zip(preds, batch_data['image_id']):
-                            pred.image_id = image_id
-                            pass
-                        val_info = add_stats(val_info, info_)
-                        val_losses.append(loss.item())
-                        # calculate averge iou
-                        pass
-                    
-                    bar_val.set_postfix(**info_)
-                    pred_records.extend(preds)
-                    gt_records.extend(extract_ground_truth(batch_data))
-                    pass
-                
-                val_time = time.time() - val_start_time
-                val_hours, remainder = divmod(val_time, 3600)
-                val_mins, val_secs = divmod(remainder, 60)
-                
-                epoch_time = time.time() - epoch_start_time
-                epoch_hours, remainder = divmod(epoch_time, 3600)
-                epoch_mins, epoch_secs = divmod(remainder, 60)
-                
-                train_info = divide_stats(train_info, len(dataloader_train))
-                val_info = divide_stats(val_info, len(dataloader_val))
-
-                # Evaluate the model
-                # stat = evaluate.eval_detection_result(
-                #     gt_records, pred_records, model.get_class_names())
-
-                stat = evaluate.eval_detection_result_by_class_id(
-                    gt_records, pred_records, eval_class_ids)
-                
-                for loss_name in ['box', 'cls', 'giou']:
-                    stat[f'train/{loss_name}_loss'] = train_info[f'{loss_name}']
-                    stat[f'val/{loss_name}_loss'] = val_info[f'{loss_name}']
-                    pass
-                
                 self.save_epoch_result(i_epoch, stat, self.args.output_path)
-                self.logger.info(
-                    f'Epoch {i_epoch}, lr: {optimizer.param_groups[0]["lr"]}, lr_backbone: {optimizer.param_groups[1]["lr"]}, train loss: {np.mean(train_losses)}, valid loss: {np.mean(val_losses)}, '
-                    f'{format_stats(val_info)}'
-                )
-                self.logger.info(
-                    f'Elapsed Time: Train {int(train_hours):02d}:{int(train_mins):02d}:{int(train_secs):02d} | '
-                    f'Valid {int(val_hours):02d}:{int(val_mins):02d}:{int(val_secs):02d} | '
-                    f'Epoch {int(epoch_hours):02d}:{int(epoch_mins):02d}:{int(epoch_secs):02d}'
-                )
+                self._save_best_model(self.model, stat.get('mAP', 0.0))
+            
+            self._save_checkpoint(self.model)
+            
+            # Check early stopping
+            if self._check_early_stopping(summary['val_loss']):
+                self.logger.info(f'Early stopping triggered at epoch {i_epoch}')
+                break
+            
+            # Update scheduler
+            if i_epoch >= self.args.warmup_epochs:
+                self.scheduler.step()
+        
+        # log training summary
+        self._log_training_summary(start_time)
 
-                # Save checkpoint
-                checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
-                self.save_model(model, checkpoint_path)
-                pass
-
-            if i_epoch >= warmup_epochs:
-                scheduler.step()
-                pass
-            pass
+    def _log_training_summary(self, start_time):
+        """log training summary"""
         total_time = time.time() - start_time
-        total_hours, remainder = divmod(total_time, 3600)
-        total_mins, total_secs = divmod(remainder, 60)
+        total_time_formatted = self._format_time(total_time)
         start_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))
         end_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        
         self.logger.info(f'Start Time: {start_time_str}, End Time: {end_time_str}')
-        self.logger.info(f'Total Time: {int(total_hours):02d}:{int(total_mins):02d}:{int(total_secs):02d}') 
+        self.logger.info(f'Total Time: {total_time_formatted[0]:02d}:{total_time_formatted[1]:02d}:{total_time_formatted[2]:02d}')
 
-
-    
     def save_epoch_result(self, iepoch, stat, output_path):
         header = ['mAP', 'precision', 'recall', 'f1_score', 'fnr', 'confidence', 'train/box_loss', 'train/cls_loss', 'train/giou_loss', 'val/box_loss', 'val/cls_loss', 'val/giou_loss']
         

@@ -128,6 +128,7 @@ class Model:
                 if any(name.endswith(x) for x in query_param_names):
                     checkpoint['model'][name] = state[:num_desired_queries]
             self.model.load_state_dict(checkpoint['model'], strict=False)
+            print("Parameters loaded successfully")
 
         if args.backbone_lora:
             print("Applying LORA to backbone")
@@ -145,8 +146,6 @@ class Model:
         self.model = self.model.to(self.device)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(args)
         
-        state_dict = self.model.state_dict()
-
         self.stop_early = False
     
     def reinitialize_detection_head(self, num_classes):
