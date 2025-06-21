@@ -8,7 +8,6 @@ class PredictionResult(pydantic.BaseModel):
     # model_config  = pydantic.ConfigDict(arbitrary_types_allowed=True)
     class Config:
         arbitrary_types_allowed = True
-        pass
     image_id: int = None
     bboxes: np.ndarray = None
     scores: np.ndarray = None
@@ -35,38 +34,45 @@ class PredictionResult(pydantic.BaseModel):
             }
             if self.annotation_ids is not None:
                 rec['id'] = int(self.annotation_ids[i])
-                pass
             else:
                 rec['id'] = -1
-                pass
             coco_result.append(rec)
-            pass
         return coco_result
-
-    pass
 
 
 class HQTrainerArguments(pydantic.BaseModel):
-    model_config  = pydantic.ConfigDict(protected_namespaces=())
-    data_path: str
-    num_epoches: int = 100
-    warmup_epochs: int = 5
-    num_data_workers: int = 0
-    lr0: float = 1e-4
-    lr_min: float = 1e-6
-    lr_backbone_mult: float = 0.1
-    batch_size: int = 4
-    device: str = 'cuda:0'
-    checkpoint_path: str = 'output'
-    output_path: str = 'output'
-    checkpoint_interval: int = 10
-    model_argument: dict = {}
-    image_size: int = 640
-    enable_amp: bool = False
-    gradient_update_interval: int = 1
+    model_config = pydantic.ConfigDict(protected_namespaces=())    # 模型配置
     
-    class_id2names: dict = None
-    eval_class_names: List[str] = None
-
-    devices: List[int] = [0]
-    pass
+    # 数据集相关
+    data_path: str    # 数据集路径
+    image_size: int = 640    # 图像大小
+    num_data_workers: int = 0    # 数据加载器线程数
+    
+    # 训练相关
+    num_epoches: int = 100    # 训练轮数
+    warmup_epochs: int = 5    # 预热轮数
+    batch_size: int = 4    # 批量大小
+    gradient_update_interval: int = 1    # 梯度更新间隔
+    enable_amp: bool = False    # 是否启用混合精度训练
+    max_grad_norm: float = 5.0    # 梯度裁剪阈值
+    
+    # 优化器相关
+    lr0: float = 1e-4    # 初始学习率
+    lr_min: float = 1e-6    # 最小学习率
+    lr_backbone_mult: float = 1    # 主干网络学习率倍数
+    
+    # 设备相关
+    device: str = 'cuda:0'    # 设备
+    devices: List[int] = [0]    # 设备列表
+    
+    # 输出相关
+    checkpoint_path: str = 'output'    # 检查点路径
+    output_path: str = 'output'    # 输出路径
+    checkpoint_interval: int = 10    # 检查点间隔
+    
+    # 模型相关
+    model_argument: dict = {}    # 模型参数
+    
+    # 类别相关
+    class_id2names: dict = None    # 类别ID到名称的映射
+    eval_class_names: List[str] = None    # 评估类别名称
