@@ -79,7 +79,7 @@ class HQRFDETR(HQModel):
         return model_cls.model
 
     def forward(self, batch_data: Dict):
-        samples = nested_tensor_from_tensor_list(batch_data['img'])
+        samples = batch_data['img']
         targets = batch_data['targets'] 
         return self.model(samples, targets)
         

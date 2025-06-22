@@ -20,7 +20,6 @@ class HQDINO(HQModel):
             self.id2names = {i: name for i, name in enumerate(class_names)}
         else:
             self.id2names = class_id2names
-            pass
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
         dino_config_path = os.path.join(current_dir, 'configs', 'dino_4scale_r50_8xb2_12e_coco.py')

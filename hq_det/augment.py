@@ -562,8 +562,8 @@ class BGR2RGB:
 
 
 class Format:
-    def __init__(self, input_size=(640, 640)):
-        self.input_size = input_size
+    def __init__(self):
+        ...
 
     def __call__(self, data):
         img = data['img']
@@ -590,3 +590,12 @@ class Format:
         data['batch_idx'] = torch.zeros((bboxes.shape[0],), dtype=torch.int64)
         return data
 
+class Normalize:
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, data):
+        img = data['img']
+        data['img'] = VF.normalize(img, mean=self.mean, std=self.std)
+        return data
