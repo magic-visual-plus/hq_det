@@ -237,6 +237,7 @@ def coco_extended_metrics(coco_eval):
     }
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+    model = model.to(device)
     model.eval()
     if args.fp16_eval:
         model.half()
@@ -251,7 +252,14 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
     iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors.keys())
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
 
-    for samples, targets in metric_logger.log_every(data_loader, 10, header):
+    for batch_data in metric_logger.log_every(data_loader, 10, header):
+        if isinstance(batch_data, dict):
+            samples = batch_data['img']
+            targets = batch_data['targets']
+        else:
+            samples = batch_data[0]
+            targets = batch_data[1]
+
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 

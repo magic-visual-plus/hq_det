@@ -34,7 +34,6 @@ class MyTrainer(HQTrainer):
 
         for b in batch:
             b['img'], b['bboxes_cxcywh_norm'] = torch_utils.pad_image(b['img'], b['bboxes_cxcywh_norm'], (max_h, max_w))
-            pass
     
         new_batch = {}
         batch = [dict(sorted(b.items())) for b in batch]  # make sure the keys are in the same order
@@ -48,7 +47,6 @@ class MyTrainer(HQTrainer):
             if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"} or k.startswith("bboxes_"):
                 value = torch.cat(value, 0)
             new_batch[k] = value
-            pass
         
         new_batch["batch_idx"] = list(new_batch["batch_idx"])
         for i in range(len(new_batch["batch_idx"])):

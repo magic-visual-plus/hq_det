@@ -70,12 +70,10 @@ def extract_ground_truth(batch_data):
         if mask.sum() == 0:
             gt_bboxes = np.zeros((0, 4))
             gt_cls = np.zeros((0,))
-            pass
         else:
             # add gt
             gt_bboxes = batch_data['bboxes_xyxy'][mask].cpu().numpy()
             gt_cls = batch_data['cls'][mask].cpu().numpy()
-            pass
 
         record =  PredictionResult(
             image_id=image_id,
@@ -84,8 +82,6 @@ def extract_ground_truth(batch_data):
             cls=gt_cls,
         )
         gt_records.append(record)
-        pass
-
 
     return gt_records
 
@@ -143,12 +139,14 @@ class HQTrainer:
             'train_info': {},       # train metrics
             'val_info': {},         # validation metrics
         }
+        self.HQ_DEBUG =  int(os.environ.get('HQ_DEBUG', '1'))
         
         self.setup_training_environment()
 
     def setup_training_environment(self):
         # print training arguments
-        print_training_arguments(self.args)
+        if self.HQ_DEBUG:
+            print_training_arguments(self.args)
         
         # setup datasets and transforms
         self.dataset_train, self.dataset_val = self._setup_datasets_and_transforms()
@@ -333,9 +331,10 @@ class HQTrainer:
             trainsforms_train, trainsforms_val)
 
         # print dataset information
-        print_dataset_summary(dataset_train, dataset_val)
-        # print augmentation steps
-        print_augmentation_steps(trainsforms_train, trainsforms_val)
+        if self.HQ_DEBUG:
+            print_dataset_summary(dataset_train, dataset_val)
+            # print augmentation steps
+            print_augmentation_steps(trainsforms_train, trainsforms_val)
 
         return dataset_train, dataset_val
 
@@ -359,7 +358,8 @@ class HQTrainer:
     def _setup_model(self) -> HQModel:
         """build model and log number of parameters"""
         model = self.build_model()
-        print_model_summary(model)
+        if self.HQ_DEBUG:
+            print_model_summary(model)
         return model
 
     def _setup_distributed_training(self) -> tuple[HQModel, str, torch.utils.data.Sampler, torch.utils.data.Sampler]:
@@ -399,9 +399,7 @@ class HQTrainer:
 
     def _setup_dataloaders(self) -> tuple[
         torch.utils.data.DataLoader, 
-        torch.utils.data.DataLoader, 
-        torch.utils.data.Sampler, 
-        torch.utils.data.Sampler
+        torch.utils.data.DataLoader
     ]:
         """setup dataloaders"""
         dataloader_train = torch.utils.data.DataLoader(

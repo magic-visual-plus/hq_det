@@ -25,9 +25,7 @@ class HQRFDETR(HQModel):
     def __init__(self, class_id2names=None, **kwargs):
         super(HQRFDETR, self).__init__(class_id2names, **kwargs)
         if class_id2names is None:
-            data = torch.load(kwargs['model'], map_location='cpu')
-            class_names = data['meta']['dataset_meta']['CLASSES']
-            self.id2names = {i: name for i, name in enumerate(class_names)}
+            pass
         else:
             self.id2names = class_id2names
         

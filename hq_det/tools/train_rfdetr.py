@@ -6,11 +6,22 @@ from hq_det import augment
 import torch.optim
 from hq_det.dataset import CocoDetection as HQCocoDetection
 from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
+from hq_det.models.rfdetr.engine import evaluate
+from hq_det.models.rfdetr.datasets import get_coco_api_from_dataset
+from hq_det.models.rfdetr.datasets import build_dataset
+import hq_det.models.rfdetr.util.misc as utils
+
 
 
 class MyTrainer(HQTrainer):
     def __init__(self, args: HQTrainerArguments):
         super().__init__(args)
+        self.raw_dataset_val = build_dataset(image_set='val', args=self.model.args, resolution=args.image_size)
+        sampler_val = torch.utils.data.SequentialSampler(self.raw_dataset_val)
+        self.raw_dataloader_val =   torch.utils.data.DataLoader(self.raw_dataset_val, args.batch_size, sampler=sampler_val,
+                                    drop_last=False, collate_fn=utils.collate_fn, 
+                                    num_workers=args.num_data_workers)
+
 
     def build_model(self) -> rfdetr.HQRFDETR:
         id2names = self.args.class_id2names
@@ -19,7 +30,20 @@ class MyTrainer(HQTrainer):
             'num_classes': len(id2names)
         })
         model = rfdetr.HQRFDETR(class_id2names=id2names, **self.args.model_argument)
+        print(model.args)
         return model
+    
+    def _process_validation_results(self,  all_preds, all_gts, eval_class_ids) -> dict:
+        stat = super()._process_validation_results(all_preds, all_gts, eval_class_ids)
+        model = self.model
+        criterion = model.criterion
+        postprocessors = model.postprocessors
+        dataloader_val = self.raw_dataloader_val
+        base_ds = get_coco_api_from_dataset(self.raw_dataset_val)
+        test_stats, coco_evaluator = evaluate(
+                model.model, criterion, postprocessors, dataloader_val, base_ds, self.device, model.args)
+
+        return stat
     
     def collate_fn(self, batch):
         def safe_to_tensor(data, dtype=None):  
@@ -43,10 +67,10 @@ class MyTrainer(HQTrainer):
                 'area': safe_to_tensor(b['area'], dtype=torch.float32),
                 'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
                 'size': safe_to_tensor(img.shape[:2], dtype=torch.int64),
+                'image_id': safe_to_tensor(b['image_id'], dtype=torch.int64),
             }
             targets.append(target)
             imgs.append(img)
-        batch_img = nested_tensor_from_tensor_list(imgs)
 
         new_batch = {
             'targets': tuple(targets),
@@ -54,7 +78,7 @@ class MyTrainer(HQTrainer):
             'bboxes_xyxy': torch.cat([b['bboxes_xyxy'] for b in batch], 0),
             'cls': torch.cat([b['labels'] for b in targets], 0),
             'batch_idx': torch.cat([b['batch_idx']+i for i, b in enumerate(batch)], 0),
-            'img': batch_img
+            'img': nested_tensor_from_tensor_list(imgs)
         }
         
         return new_batch
