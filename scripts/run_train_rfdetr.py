@@ -46,6 +46,7 @@ def run_train_rfdetr(args, class_names):
             checkpoint_interval=args.checkpoint_interval,  # 检查点间隔
             image_size=args.image_size,  # 图像大小
             gradient_update_interval=args.gradient_update_interval,  # 梯度更新间隔
+            max_grad_norm=0.1,  # 最大梯度范数
             model_argument={
                 "model": args.load_checkpoint,  # 加载的模型路径
                 "model_type": "base",  # 模型类型
