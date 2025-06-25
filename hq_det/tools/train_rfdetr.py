@@ -2,7 +2,6 @@ from hq_det.models import rfdetr
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 import os
 import torch
-import numpy as np
 from hq_det import augment
 import torch.optim
 from hq_det.dataset import CocoDetection as HQCocoDetection
@@ -25,9 +24,9 @@ class MyTrainer(HQTrainer):
         model = rfdetr.HQRFDETR(class_id2names=id2names, **self.args.model_argument)
         print(model.args)
         return model
-    
-    def _process_validation_results(self,  all_preds, all_gts, eval_class_ids) -> dict:
-        # stat = super()._process_validation_results(all_preds, all_gts, eval_class_ids)
+
+    def valid_epoch(self, epoch: int) -> tuple[list[float], dict, dict]:
+        self.model.eval()
         model = self.model
         criterion = model.criterion
         postprocessors = model.postprocessors
@@ -35,18 +34,26 @@ class MyTrainer(HQTrainer):
         base_ds = get_coco_api_from_dataset(self.dataset_val)
         test_stats, coco_evaluator = evaluate(
                 model.model, criterion, postprocessors, dataloader_val, base_ds, self.device, model.args)
+        
+        last_class_result = test_stats['results_json']['class_map'][-1]
+        precision = last_class_result['precision']
+        recall = last_class_result['recall']
+        
+        f1_score = 2 * (precision * recall) / (precision + recall + 1e-6)
+        
         stat = {
-            'mAP': test_stats['results_json']['map'],
-            'precision': test_stats['results_json']['precision'],
-            'recall': test_stats['results_json']['recall'],
-            'f1_score': 2 * (test_stats['results_json']['precision'] * test_stats['results_json']['recall']) / (test_stats['results_json']['precision'] + test_stats['results_json']['recall'] + 1e-6),
-            'fnr': 1 - test_stats['results_json']['recall'],
+            'mAP': last_class_result['map@50:95'],
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1_score,
+            'fnr': 1 - recall,
             'confidence': None,  
             'precisions': [],  
             'recalls': [],  
         }
 
-        return stat
+        return [], {}, stat
+        
     
     def collate_fn(self, batch):
         def safe_to_tensor(data, dtype=None):  
