@@ -257,7 +257,7 @@ class HQTrainer:
             
             # set image id for prediction results
             for pred, image_id in zip(preds, batch_data['image_id']):
-                pred.image_id = image_id.item()
+                pred.image_id = image_id
             
             return loss, info, preds
 

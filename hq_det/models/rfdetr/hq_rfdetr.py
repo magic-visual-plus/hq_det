@@ -97,7 +97,7 @@ class HQRFDETR(HQModel):
                 record.bboxes = pred_bboxes
                 record.cls = pred_cls
                 record.scores = pred_scores
-                record.image_id = batch_data['image_id'][i].item()
+                record.image_id = batch_data['image_id'][i]
             results.append(record)
         return results
         
