@@ -2,7 +2,6 @@ from hq_det.models import rfdetr
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 import os
 import torch
-import numpy as np
 from hq_det import augment
 import torch.optim
 from hq_det.dataset import CocoDetection as HQCocoDetection

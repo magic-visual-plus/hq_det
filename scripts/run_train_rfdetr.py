@@ -1,11 +1,11 @@
 import os
 import random
+from loguru import logger
 import numpy as np
 import torch
 from hq_det.monitor import LogRedirector
 from hq_det.monitor import TrainingVisualizer
 from hq_det.monitor import EmailSender 
-
 
 def set_seed(seed=42):
     """设置随机种子以确保实验的可重复性
@@ -30,6 +30,9 @@ def set_seed(seed=42):
 def run_train_rfdetr(args, class_names):
     from hq_det.trainer import HQTrainerArguments
     from hq_det.tools.train_rfdetr import MyTrainer
+
+    model_type = "large" if 'large' in args.load_checkpoint else "base"
+    logger.info(f"Model type: {model_type}")
     
     trainer = MyTrainer(
         HQTrainerArguments(
@@ -50,7 +53,7 @@ def run_train_rfdetr(args, class_names):
             max_grad_norm=0.1,  # 最大梯度范数
             model_argument={
                 "model": args.load_checkpoint,  # 加载的模型路径
-                "model_type": "base",  # 模型类型
+                "model_type": model_type,  # 模型类型
                 "lr_encoder": 1.5e-4,  # 编码器学习率
                 "lr_component_decay": 0.7,  # 组件衰减率
             },
