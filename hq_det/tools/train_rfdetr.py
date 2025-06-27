@@ -48,7 +48,8 @@ class MyTrainer(HQTrainer):
                 # 'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
                 'orig_size': safe_to_tensor(img.shape[1:3], dtype=torch.int64),
                 'size': safe_to_tensor(img.shape[1:3], dtype=torch.int64),
-                'image_id': safe_to_tensor(b['image_id'], dtype=torch.int64),
+                # 'image_id': safe_to_tensor(b['image_id'], dtype=torch.int64),
+                'image_id': b['image_id'],
             }
 
             targets.append(target)
@@ -56,7 +57,8 @@ class MyTrainer(HQTrainer):
 
         new_batch = {
             'targets': tuple(targets),
-            'image_id': torch.tensor([b['image_id'] for b in batch], dtype=torch.int64),
+            # 'image_id': torch.tensor([b['image_id'] for b in batch], dtype=torch.int64),
+            'image_id': [b['image_id'] for b in batch],
             'bboxes_xyxy': torch.cat([b['bboxes_xyxy'] for b in batch], 0),
             'cls': torch.cat([b['labels'] for b in targets], 0),
             'batch_idx': torch.cat([b['batch_idx']+i for i, b in enumerate(batch)], 0),
