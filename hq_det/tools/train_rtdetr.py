@@ -85,7 +85,7 @@ class MyTrainer(HQTrainer):
 
 
 def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=6, image_size=1024,
-        gradient_update_interval=1):
+        gradient_update_interval=1, lr_backbone_mult=1.0):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -94,6 +94,7 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_na
             num_data_workers=8,
             lr0=lr0,
             lr_min=1e-6,
+            lr_backbone_mult=lr_backbone_mult,
             batch_size=batch_size,
             device='cuda:0',
             output_path=output_path,

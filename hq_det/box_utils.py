@@ -145,6 +145,26 @@ def iou_xyxy(box1, box2):
     return iou
 
 
+
+def filter_invalid_boxes(boxes, cls, im_width, im_height):
+    """
+    Filter out invalid boxes that are outside the image boundaries.
+    """
+
+    boxes_ = boxes.copy()
+    mask = (boxes_[:, 0] < im_width) & (boxes_[:, 1] < im_height) & \
+              (boxes_[:, 2] > 0) & (boxes_[:, 3] > 0) & \
+              (boxes_[:, 2] > boxes_[:, 0]) & (boxes_[:, 3] > boxes_[:, 1])
+    boxes_ = boxes_[mask]
+    boxes_[:, 0] = np.clip(boxes_[:, 0], 0, im_width)
+    boxes_[:, 1] = np.clip(boxes_[:, 1], 0, im_height)
+    boxes_[:, 2] = np.clip(boxes_[:, 2], 0, im_width)
+    boxes_[:, 3] = np.clip(boxes_[:, 3], 0, im_height)
+    cls_ = cls[mask]
+
+    return boxes_, cls_
+
+
 def nms(boxes, cls, scores):
     # non_max_suppression
 

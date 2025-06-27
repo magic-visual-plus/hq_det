@@ -39,6 +39,7 @@ def run_train_rfdetr(args, class_names):
             num_data_workers=args.num_data_workers,  # 数据加载线程数
             lr0=args.lr0,  # 初始学习率
             lr_min=args.lr_min,  # 最小学习率
+            lr_backbone_mult=0.1,
             batch_size=args.batch_size,  # 批量大小
             device=args.device,  # 设备
             checkpoint_path=args.output_path,  # 检查点路径
@@ -72,8 +73,8 @@ def get_args():
     parser.add_argument('--num_epoches', '-e', type=int, default=100, help='Number of epochs')
     parser.add_argument('--warmup_epochs', '-w', type=int, default=2, help='Number of warmup epochs')
     parser.add_argument('--num_data_workers', '-j', type=int, default=8, help='Number of data workers')
-    parser.add_argument('--lr0', '--initial-lr', type=float, default=1e-3, help='Initial learning rate')
-    parser.add_argument('--lr_min', '--min-lr', type=float, default=5e-5, help='Minimum learning rate')
+    parser.add_argument('--lr0', '--initial-lr', type=float, default=1e-4, help='Initial learning rate')
+    parser.add_argument('--lr_min', '--min-lr', type=float, default=1e-6, help='Minimum learning rate')
     parser.add_argument('--batch_size', '-b', type=int, default=4, help='Batch size')
     parser.add_argument('--device', '--dev', type=str, default='cuda:0', help='Device to use')
     parser.add_argument('--checkpoint_interval', '--ckpt-int', type=int, default=-1, help='Checkpoint interval')
@@ -112,16 +113,3 @@ if __name__ == '__main__':
     visualizer.load_data()
     visualizer.generate_report()
 
-    email_sender = EmailSender(
-        sender_email='RookieEmail@163.com',
-        sender_password='TFeLq9AKDdTjTsht'
-    )
-    email_sender.send_experiment_notification(
-        receiver_email='jiangchongyang@digitalpredict.cn',
-        experiment_name='RF-DETR Training Results',
-        attachments=[pdf_path, csv_path, args.log_file],
-        additional_info=f"{args.experiment_info}\n"\
-            f"PDF_PATH: {pdf_path}\n"\
-            f"CSV_PATH: {csv_path}\n"\
-            f"LOG_PATH: {args.log_file}"
-    )
