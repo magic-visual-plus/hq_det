@@ -145,16 +145,16 @@ class CocoDetection(torchvision.datasets.CocoDetection):
                     Final type: cx,cy,w,h. normalized data. 
         """
         try:
-            img, target = super(CocoDetection, self).__getitem__(idx)
+            img, target_coco = super(CocoDetection, self).__getitem__(idx)
         except:
             print("Error idx: {}".format(idx))
             idx += 1
-            img, target = super(CocoDetection, self).__getitem__(idx)
+            img, target_coco = super(CocoDetection, self).__getitem__(idx)
             pass
 
         image_id = self.ids[idx]
-        target = {'image_id': image_id, 'annotations': target}
-        img, target = self.prepare(img, target)
+        target_coco = {'image_id': image_id, 'annotations': target_coco}
+        img, target = self.prepare(img, target_coco)
 
         if isinstance(img, Image.Image):
             img = np.array(img)
@@ -169,10 +169,10 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         
         # print(target)
         if self._transforms is not None:
-            target = self._transforms(target)
+            _target = self._transforms(target)
             pass
-
-        return target
+        
+        return _target
     
     @property
     def class_id2names(self):

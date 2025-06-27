@@ -24,36 +24,6 @@ class MyTrainer(HQTrainer):
         model = rfdetr.HQRFDETR(class_id2names=id2names, **self.args.model_argument)
         print(model.args)
         return model
-
-    def valid_epoch(self, epoch: int) -> tuple[list[float], dict, dict]:
-        self.model.eval()
-        model = self.model
-        criterion = model.criterion
-        postprocessors = model.postprocessors
-        dataloader_val = self.dataloader_val
-        base_ds = get_coco_api_from_dataset(self.dataset_val)
-        test_stats, coco_evaluator = evaluate(
-                model.model, criterion, postprocessors, dataloader_val, base_ds, self.device, model.args)
-        
-        last_class_result = test_stats['results_json']['class_map'][-1]
-        precision = last_class_result['precision']
-        recall = last_class_result['recall']
-        
-        f1_score = 2 * (precision * recall) / (precision + recall + 1e-6)
-        
-        stat = {
-            'mAP': last_class_result['map@50:95'],
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1_score,
-            'fnr': 1 - recall,
-            'confidence': None,  
-            'precisions': [],  
-            'recalls': [],  
-        }
-
-        return [], {}, stat
-        
     
     def collate_fn(self, batch):
         def safe_to_tensor(data, dtype=None):  
@@ -75,10 +45,12 @@ class MyTrainer(HQTrainer):
                 'labels': safe_to_tensor(b['cls'], dtype=torch.int64),
                 'iscrowd': safe_to_tensor(b['iscrowd'], dtype=torch.int64),
                 'area': safe_to_tensor(b['area'], dtype=torch.float32),
-                'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
-                'size': safe_to_tensor(img.shape[:2], dtype=torch.int64),
+                # 'orig_size': safe_to_tensor(b['original_shape'], dtype=torch.int64),
+                'orig_size': safe_to_tensor(img.shape[1:3], dtype=torch.int64),
+                'size': safe_to_tensor(img.shape[1:3], dtype=torch.int64),
                 'image_id': safe_to_tensor(b['image_id'], dtype=torch.int64),
             }
+
             targets.append(target)
             imgs.append(img)
 

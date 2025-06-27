@@ -196,6 +196,7 @@ class RandomRotate:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             bbs = BoundingBoxesOnImage([
                 BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
@@ -212,8 +213,10 @@ class RandomRotate:
                 bboxes_[i, 3] = box.y2
                 pass
 
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
             data['img'] = image_aug
             data['bboxes'] = bboxes_
+            data['cls'] = cls_
             pass
 
         return data
@@ -227,6 +230,7 @@ class RandomAffine:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             bbs = BoundingBoxesOnImage([
                 BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
@@ -242,8 +246,12 @@ class RandomAffine:
                 bboxes_[i, 3] = box.y2
                 pass
 
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            
             data['img'] = image_aug
             data['bboxes'] = bboxes_
+            data['cls'] = cls_
+
             pass
 
         return data
@@ -383,14 +391,18 @@ class RandomResize:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             scale = np.random.uniform(0.5, 1.5)
             new_h, new_w = int(img.shape[0] * scale), int(img.shape[1] * scale)
             img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-            bboxes = bboxes * scale
+            bboxes_ = bboxes * scale
 
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            
             data['img'] = img
-            data['bboxes'] = bboxes
+            data['bboxes'] = bboxes_
+            data['cls'] = cls_
             pass
 
         return data
@@ -406,6 +418,7 @@ class RandomPerspective:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             bbs = BoundingBoxesOnImage([
                 BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
@@ -422,8 +435,12 @@ class RandomPerspective:
                 bboxes_[i, 2] = box.x2
                 bboxes_[i, 3] = box.y2
                 pass
-            data['bboxes'] = bboxes_
+
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
             
+            data['bboxes'] = bboxes_
+            data['cls'] = cls_
+            pass
         return data
     pass
 
@@ -480,6 +497,7 @@ class Resize:
     def __call__(self, data):
         img = data['img']
         bboxes = data['bboxes']
+        cls = data['cls']
 
         h, w = img.shape[:2]
 
@@ -489,13 +507,17 @@ class Resize:
             scale = self.max_size / max_hw
             new_h, new_w = int(h * scale), int(w * scale)
             img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-            bboxes = bboxes * scale
+            bboxes_ = bboxes * scale
         else:
             new_h, new_w = h, w
+            bboxes_ = bboxes.copy()
             pass
 
+        bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, new_w, new_h)
+        
         data['img'] = img.copy()
-        data['bboxes'] = bboxes
+        data['bboxes'] = bboxes_
+        data['cls'] = cls_
 
         return data
 
@@ -530,6 +552,11 @@ class Compose:
     def __call__(self, data):
         for t in self.transforms:
             data = t(data)
+            if not isinstance(t, ToTensor) and not isinstance(t, Normalize):
+                if (data['bboxes'][:, 0] > data['img'].shape[1]).any() or (data['bboxes'][:, 3] <= data['bboxes'][:, 1]).any() or (data['bboxes'][:, 1] < 0).any():
+                    raise ValueError("Box coordinates exceed image dimensions.")
+                pass
+            pass
         return data
     
     def extend(self, transforms):
@@ -584,6 +611,9 @@ class Format:
         
         data['bboxes_xyxy'] = bboxes_xyxy
         data['bboxes_cxcywh_norm'] = bboxes_cxcywh_norm
+        if (bboxes_cxcywh_norm[:, -1] == 0).any():
+            raise ValueError("Box width or height is zero after normalization.")
+        
         data['bboxes'] = bboxes_xyxy
         data['cls'] = torch.from_numpy(data['cls']).long()
         data['img'] = img

@@ -97,7 +97,7 @@ class HQRFDETR(HQModel):
                 record.bboxes = pred_bboxes
                 record.cls = pred_cls
                 record.scores = pred_scores
-                record.image_id = batch_data['image_id'][i]
+                record.image_id = batch_data['image_id'][i].item()
             results.append(record)
         return results
         
@@ -116,7 +116,9 @@ class HQRFDETR(HQModel):
             for k in loss_dict.keys()
             if k in weight_dict
         )
-
+        if torch.isnan(losses):
+            raise ValueError("Loss is NaN, please check your model and data.")
+        
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         loss_dict_reduced_unscaled = {
             f"{k}_unscaled": v for k, v in loss_dict_reduced.items()
@@ -156,38 +158,8 @@ class HQRFDETR(HQModel):
     def get_param_dict(self, args: HQTrainerArguments):
         model = self.model.module if hasattr(self.model, 'module') else self.model
         self.args.lr = args.lr0
-        
-        return get_param_dict(self.args, model)
-        backbone = model.backbone[0]
-        backbone_named_param_lr_pairs = backbone.get_named_param_lr_pairs(self.args, prefix="backbone.0")
-        backbone_param_lr_pairs = [param_dict for _, param_dict in backbone_named_param_lr_pairs.items()]
-        
-        decoder_key = 'transformer.decoder'
-        decoder_params = [
-            p
-            for n, p in model.named_parameters() if decoder_key in n and p.requires_grad
-        ]
-
-        decoder_param_lr_pairs = [
-            {"params": param, "lr": args.lr0 * self.args.lr_component_decay} 
-            for param in decoder_params
-        ]
-
-        other_params = [
-            p
-            for n, p in model.named_parameters() if (
-                n not in backbone_named_param_lr_pairs and decoder_key not in n and p.requires_grad)
-        ]
-        other_param_dicts = [
-            {"params": param, "lr": args.lr0} 
-            for param in other_params
-        ]
-        
-        final_param_dicts = (
-            other_param_dicts + backbone_param_lr_pairs + decoder_param_lr_pairs
-        )
-
-        return final_param_dicts
+        params =  get_param_dict(self.args, model)
+        return params
 
     def save(self, path):
         torch.save(

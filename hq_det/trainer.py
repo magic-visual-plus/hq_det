@@ -90,7 +90,7 @@ class DefaultAugmentation:
     """default data augmentation class"""
     
     @staticmethod
-    def get_train_transforms(image_size):
+    def get_train_transforms(image_size, p=0.1):
         """get train data augmentation"""
         transforms = []
         transforms.append(augment.ToNumpy())
@@ -100,14 +100,14 @@ class DefaultAugmentation:
         transforms.append(augment.RandomVerticalFlip())
         transforms.append(augment.RandomGrayScale())
         transforms.append(augment.RandomShuffleChannel())
-        transforms.append(augment.RandomRotate90(p=0.1))
-        transforms.append(augment.RandomRotate(p=0.1))
-        transforms.append(augment.RandomAffine(p=0.1))
-        transforms.append(augment.RandomPerspective(p=0.1))
-        transforms.append(augment.RandomNoise(p=0.1))
-        transforms.append(augment.RandomBrightness(p=0.1))
-        transforms.append(augment.RandomCrop(p=0.1))
-        transforms.append(augment.RandomResize(p=0.1))
+        transforms.append(augment.RandomRotate90(p=p))
+        transforms.append(augment.RandomRotate(p=p))
+        transforms.append(augment.RandomAffine(p=p))
+        transforms.append(augment.RandomPerspective(p=p))
+        transforms.append(augment.RandomNoise(p=p))
+        transforms.append(augment.RandomBrightness(p=p))
+        transforms.append(augment.RandomCrop(p=p))
+        transforms.append(augment.RandomResize(p=p))
         
         # basic processing
         transforms.append(augment.Resize(max_size=image_size))
@@ -257,7 +257,7 @@ class HQTrainer:
             
             # set image id for prediction results
             for pred, image_id in zip(preds, batch_data['image_id']):
-                pred.image_id = image_id
+                pred.image_id = image_id.item()
             
             return loss, info, preds
 
@@ -315,7 +315,8 @@ class HQTrainer:
                 all_gts.extend(extract_ground_truth(batch_data))
                 
                 bar_val.set_postfix(**info)
-            
+                pass
+            bar_val.close()
             val_info = divide_stats(val_info, len(self.dataloader_val))
             stat = self._process_validation_results(all_preds, all_gts, self.eval_class_ids)
             
