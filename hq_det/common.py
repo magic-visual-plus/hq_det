@@ -55,6 +55,8 @@ class HQTrainerArguments(pydantic.BaseModel):
     gradient_update_interval: int = 1    # 梯度更新间隔
     enable_amp: bool = False    # 是否启用混合精度训练
     max_grad_norm: float = 5.0    # 梯度裁剪阈值
+    early_stopping: bool = True    # 是否启用早停
+    early_stopping_patience: int = 10   # 早停轮数
     
     # 优化器相关
     lr0: float = 1e-4    # 初始学习率

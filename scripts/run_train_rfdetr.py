@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from hq_det.monitor import LogRedirector
 from hq_det.monitor import TrainingVisualizer
-from hq_det.monitor import EmailSender 
+from hq_det.monitor import send_training_results_email
 
 def set_seed(seed=42):
     """设置随机种子以确保实验的可重复性
@@ -58,6 +58,8 @@ def run_train_rfdetr(args, class_names):
                 "lr_component_decay": 0.7,  # 组件衰减率
             },
             eval_class_names=class_names,   # 评估类别名称
+            early_stopping=args.early_stopping,  # 是否启用早停
+            early_stopping_patience=args.early_stopping_patience,  # 早停耐心值
         )
     )
 
@@ -87,7 +89,8 @@ def get_args():
     parser.add_argument('--experiment_info', type=str, default=None, help='Additional experiment information')
     parser.add_argument('--gradient_update_interval', '-g', type=int, default=1, help='Number of batches to accumulate gradients before updating')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility (None for no seed)')
-
+    parser.add_argument('--early_stopping', type=bool, default=True, help='Enable early stopping')
+    parser.add_argument('--early_stopping_patience', type=int, default=10, help='Number of epochs with no improvement after which training will be stopped')
     args = parser.parse_args()
     
     return args
@@ -115,4 +118,5 @@ if __name__ == '__main__':
     visualizer = TrainingVisualizer(input_file=csv_path, output_file=pdf_path)
     visualizer.load_data()
     visualizer.generate_report()
+    send_training_results_email(args.log_file, pdf_path, csv_path, "RF-DETR", args.experiment_info)
 

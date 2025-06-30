@@ -613,7 +613,8 @@ class HQTrainer:
             self._save_checkpoint(self.model)
             
             # Check early stopping
-            if self._check_early_stopping(summary['val_loss']):
+            if self.args.early_stopping and \
+                self._check_early_stopping(summary['val_loss'], self.args.early_stopping_patience):
                 self.logger.info(f'Early stopping triggered at epoch {i_epoch}')
                 break
             

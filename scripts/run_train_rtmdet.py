@@ -1,9 +1,6 @@
-import time
-import torch
-
 from hq_det.monitor import LogRedirector
 from hq_det.monitor import TrainingVisualizer
-from hq_det.monitor import EmailSender 
+from hq_det.monitor import send_training_results_email
 
 
 def run_train_rtmdet(args, class_names):
@@ -67,11 +64,7 @@ if __name__ == '__main__':
         args.log_file = args.output_path + '/train.log'
     log_redirector = LogRedirector(args.log_file)
     if args.eval_class_names is None:
-        class_names = [
-            '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', 
-            '烫伤', '爆针线', '破损', ' 碰伤', '线头', '脏污', '褶皱(贯穿)', 
-            '褶皱（轻度）', '褶皱（重度）', '重跳针'
-        ]
+        class_names = []
     else:
         class_names = args.eval_class_names.split(',')
     
@@ -82,18 +75,5 @@ if __name__ == '__main__':
     visualizer = TrainingVisualizer(input_file=csv_path, output_file=pdf_path)
     visualizer.load_data()
     visualizer.generate_report()
-
-    email_sender = EmailSender(
-        sender_email='RookieEmail@163.com',
-        sender_password='TFeLq9AKDdTjTsht'
-    )
-    email_sender.send_experiment_notification(
-        receiver_email='jiangchongyang@digitalpredict.cn',
-        experiment_name='RTMDet Training Results',
-        attachments=[pdf_path, csv_path, args.log_file],
-        additional_info=f"{args.experiment_info}\n"\
-            f"PDF_PATH: {pdf_path}\n"\
-            f"CSV_PATH: {csv_path}\n"\
-            f"LOG_PATH: {args.log_file}"
-    )
+    send_training_results_email(args.log_file, pdf_path, csv_path, "RTMDet", args.experiment_info)
 

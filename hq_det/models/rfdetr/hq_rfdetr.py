@@ -12,12 +12,8 @@ from hq_det.models.rfdetr.main import populate_args
 from hq_det.models.rfdetr.models import build_criterion_and_postprocessors
 from hq_det.models.rfdetr.util import misc as utils
 
-from hq_det import torch_utils
 from hq_det.common import HQTrainerArguments, PredictionResult
 from hq_det.models.base import HQModel
-from hq_det.models.rfdetr.util.misc import NestedTensor
-from hq_det.models.rfdetr.models.backbone import Joiner
-from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
 from hq_det.models.rfdetr.util.get_param_dicts import get_param_dict
 
 
@@ -134,10 +130,10 @@ class HQRFDETR(HQModel):
 
         info = {
             'loss': loss_value,
-            'class_error': loss_dict['class_error'].item(),
             'cls': loss_dict['loss_ce'].item(),
             'box': loss_dict['loss_bbox'].item(),
             'giou': loss_dict['loss_giou'].item(),
+            # 'class_error': loss_dict['class_error'].item(),
             # 'loss_ce_0': loss_dict['loss_ce_0'].item(),
             # 'loss_bbox_0': loss_dict['loss_bbox_0'].item(),
             # 'loss_giou_0': loss_dict['loss_giou_0'].item(),
