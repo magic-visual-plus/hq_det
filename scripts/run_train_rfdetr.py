@@ -89,7 +89,7 @@ def get_args():
     parser.add_argument('--experiment_info', type=str, default=None, help='Additional experiment information')
     parser.add_argument('--gradient_update_interval', '-g', type=int, default=1, help='Number of batches to accumulate gradients before updating')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility (None for no seed)')
-    parser.add_argument('--early_stopping', type=bool, default=True, help='Enable early stopping')
+    parser.add_argument('--early_stopping', action='store_true', help='Enable early stopping')
     parser.add_argument('--early_stopping_patience', type=int, default=10, help='Number of epochs with no improvement after which training will be stopped')
     args = parser.parse_args()
     
@@ -98,7 +98,7 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
-    
+    logger.info(args)
     # 设置随机种子（如果提供）
     if args.seed is not None:
         set_seed(args.seed)
