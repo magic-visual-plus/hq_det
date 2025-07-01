@@ -158,14 +158,14 @@ class HQRTDETR(HQModel):
         for img in imgs:
             original_shapes.append(img.shape)
             pass
-
+        device = self.device
         start = time.time()
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
-            batch_data = torch_utils.batch_to_device(batch_data, self.device)
-            forward_result = self.forward(batch_data)
-            preds = self.postprocess(forward_result, batch_data, confidence)
-            pass
+            batch_data = torch_utils.batch_to_device(batch_data, device)
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
+                forward_result = self.forward(batch_data)
+                preds = self.postprocess(forward_result, batch_data, confidence)
         
 
         for i in range(len(preds)):
@@ -222,6 +222,6 @@ class HQRTDETR(HQModel):
 
     def to(self, device):
         super(HQRTDETR, self).to(device)
-        self.device = device
+        self.device = torch.device(device)
 
     pass
