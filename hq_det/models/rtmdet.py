@@ -96,8 +96,10 @@ class HQRTMDET(HQModel):
             data_sample.gt_instances = gt_instance
 
             batch_data['data_samples'].append(data_sample)
+        
+        return batch_data
 
-    def predict(self, imgs: List[np.ndarray], bgr: bool = False, confidence: float = 0.0, max_size: int = -1, device: str = 'cpu') -> List[PredictionResult]:
+    def predict(self, imgs: List[np.ndarray], bgr: bool = False, confidence: float = 0.0, max_size: int = -1) -> List[PredictionResult]:
         if not bgr:
             for i in range(len(imgs)):
                 imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
@@ -110,11 +112,13 @@ class HQRTMDET(HQModel):
                     imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
                     img_scales[i] = rate
 
+        device = self.device
         with torch.no_grad():
             batch_data = self.imgs_to_batch(imgs)
             batch_data = torch_utils.batch_to_device(batch_data, device)
-            forward_result = self.forward(batch_data)
-            preds = self.postprocess(forward_result, batch_data, confidence)
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
+                forward_result = self.forward(batch_data)
+                preds = self.postprocess(forward_result, batch_data, confidence)
             torch.cuda.empty_cache()
         
         for i in range(len(preds)):
@@ -156,3 +160,4 @@ class HQRTMDET(HQModel):
     def to(self, device):
         super(HQRTMDET, self).to(device)
         self.model.to(device)
+        self.device = torch.device(device)

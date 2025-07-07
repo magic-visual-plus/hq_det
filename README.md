@@ -15,7 +15,7 @@ HQ-DET是一个轻量级的目标检测框架，集成了多个主流的目标�
 - RTMDet Large
 - DINO R50
 - YOLOv12 Large
-- RF-DETR Large
+- RF-DETR Base
 - CO-DETR R50
 
 ## 环境要求
@@ -27,7 +27,6 @@ HQ-DET是一个轻量级的目标检测框架，集成了多个主流的目标�
 ## 安装
 
 ```bash
-# 克隆仓库
 git clone [repository_url]
 cd hq_det
 
@@ -64,6 +63,25 @@ python scripts/run_train_dino.py [dataset_dir] [model_path]
 - 详细的对比分析请参考 [benchmark.ipynb](./benchmark/benchmark.ipynb)
 
 ## 实验结果
+
+| 模型 | mAP | FPS |
+|------|-----|-----|
+| RT-DETRv2 R50 | 44.4 | 43.83 |
+| RTMDet Large | 41.6 | 23.09 |
+| DINO R50 | 39.8 | 24.75 |
+| YOLOv12 Large | 35.1 | - |
+| RF-DETR Base | 44.5 | 21.97 |
+| CO-DETR R50 | 38.1 | 6.12 |
+
+**FPS测试说明：**
+- 测试环境：RTX 4090 GPU
+- 输入尺寸：1024×1024
+- 批处理大小：1
+- 预热轮数：100
+- 测试轮数：1000
+- 使用FP32精度进行推理
+- 包含了数据加载和预处理时间
+
 
 各模型的详细实验结果可在对应目录下查看：
 - 训练日志：`nohup.out`

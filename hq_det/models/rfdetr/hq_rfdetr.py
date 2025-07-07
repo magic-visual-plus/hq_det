@@ -5,6 +5,7 @@ import numpy as np
 from typing import List, Dict, Tuple
 
 import torch.nn
+import torchvision.transforms.functional as VF
 
 from hq_det.models.rfdetr.config import RFDETRBaseConfig, RFDETRLargeConfig, TrainConfig, ModelConfig
 from hq_det.models.rfdetr.main import Model as RFDETR_Model
@@ -12,13 +13,12 @@ from hq_det.models.rfdetr.main import populate_args
 from hq_det.models.rfdetr.models import build_criterion_and_postprocessors
 from hq_det.models.rfdetr.util import misc as utils
 
-from hq_det import torch_utils
 from hq_det.common import HQTrainerArguments, PredictionResult
 from hq_det.models.base import HQModel
-from hq_det.models.rfdetr.util.misc import NestedTensor
-from hq_det.models.rfdetr.models.backbone import Joiner
-from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
 from hq_det.models.rfdetr.util.get_param_dicts import get_param_dict
+from hq_det.models.rfdetr.util.misc import nested_tensor_from_tensor_list
+
+from hq_det import torch_utils
 
 
 class HQRFDETR(HQModel):
@@ -45,6 +45,8 @@ class HQRFDETR(HQModel):
         self.args = populate_args(**all_kwargs)
         utils.init_distributed_mode(self.args)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.args)
+        self.image_size = kwargs.get('image_size', 1024)
+
 
     def get_class_names(self):
         names = ['' for _ in range(len(self.id2names))]
@@ -134,10 +136,10 @@ class HQRFDETR(HQModel):
 
         info = {
             'loss': loss_value,
-            'class_error': loss_dict['class_error'].item(),
             'cls': loss_dict['loss_ce'].item(),
             'box': loss_dict['loss_bbox'].item(),
             'giou': loss_dict['loss_giou'].item(),
+            # 'class_error': loss_dict['class_error'].item(),
             # 'loss_ce_0': loss_dict['loss_ce_0'].item(),
             # 'loss_bbox_0': loss_dict['loss_bbox_0'].item(),
             # 'loss_giou_0': loss_dict['loss_giou_0'].item(),
@@ -154,6 +156,67 @@ class HQRFDETR(HQModel):
         }
 
         return losses, info
+
+
+    def imgs_to_batch(self, imgs: List[np.ndarray]) -> Dict:
+        max_h, max_w = self.image_size, self.image_size
+
+        new_imgs = []
+        for img in imgs:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = VF.to_tensor(img)
+            img, _ = torch_utils.pad_image(img, torch.zeros((0, 4)), (max_h, max_w))
+            new_imgs.append(img)
+        
+        new_imgs = torch.stack(new_imgs, 0)
+
+        targets = [
+            {
+                "boxes": np.zeros((0, 4), dtype=np.float32),
+                "labels": np.zeros((0,), dtype=np.int32),
+                "image_id": 0,
+                'iscrowd': torch.zeros((0,), dtype=torch.int64),
+                'area': torch.zeros((0,), dtype=torch.float32),
+                'orig_size': torch.tensor(img.shape[1:3], dtype=torch.int64),
+                'size': torch.tensor(img.shape[1:3], dtype=torch.int64),
+            }
+            for _ in range(len(imgs))
+        ]
+
+        return {
+            "img": new_imgs,
+            "targets": targets,
+            "image_id": [0 for _ in range(len(imgs))],
+        }
+
+
+    def predict(self, imgs: List[np.ndarray], bgr: bool = False, confidence: float = 0.0, max_size: int = -1) -> List[PredictionResult]:
+        if not bgr:
+            for i in range(len(imgs)):
+                imgs[i] = cv2.cvtColor(imgs[i], cv2.COLOR_BGR2RGB)
+        img_scales = np.ones((len(imgs),))
+        if max_size > 0:
+            for i in range(len(imgs)):
+                max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
+                if max_hw > max_size:
+                    rate = max_size / max_hw
+                    imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
+                    img_scales[i] = rate
+        
+        device = self.device
+        with torch.no_grad():
+            batch_data = self.imgs_to_batch(imgs)
+            batch_data = torch_utils.batch_to_device(batch_data, device)
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
+                forward_result = self.forward(batch_data)
+                preds = self.postprocess(forward_result, batch_data, confidence)
+            torch.cuda.empty_cache()
+        
+        for i in range(len(preds)):
+            pred = preds[i]
+            pred.bboxes = pred.bboxes / img_scales[i]
+
+        return preds
     
     def get_param_dict(self, args: HQTrainerArguments):
         model = self.model.module if hasattr(self.model, 'module') else self.model
@@ -175,3 +238,4 @@ class HQRFDETR(HQModel):
     def to(self, device):
         super(HQRFDETR, self).to(device)
         self.model.to(device)
+        self.device = torch.device(device)

@@ -1,9 +1,6 @@
-import time
-import torch
-
 from hq_det.monitor import LogRedirector
 from hq_det.monitor import TrainingVisualizer
-from hq_det.monitor import EmailSender 
+from hq_det.monitor import send_training_results_email
 
 
 def run_train_codetr(args, class_names):
@@ -108,17 +105,4 @@ if __name__ == '__main__':
     visualizer = TrainingVisualizer(input_file=csv_path, output_file=pdf_path)
     visualizer.load_data()
     visualizer.generate_report()
-
-    email_sender = EmailSender(
-        sender_email='RookieEmail@163.com',
-        sender_password='TFeLq9AKDdTjTsht'
-    )
-    email_sender.send_experiment_notification(
-        receiver_email='jiangchongyang@digitalpredict.cn',
-        experiment_name='CoDetr Training Results',
-        attachments=[pdf_path, csv_path, args.log_file],
-        additional_info=f"{args.experiment_info}\n"\
-            f"PDF_PATH: {pdf_path}\n"\
-            f"CSV_PATH: {csv_path}\n"\
-            f"LOG_PATH: {args.log_file}"
-    )
+    send_training_results_email(args.log_file, pdf_path, csv_path, "CO-DETR", args.experiment_info)

@@ -6,3 +6,4 @@ scripts/checkpoints/*
 output
 runs
 model_files
+.ipynb_checkpoints

@@ -3,6 +3,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from email.header import Header
+from loguru import logger
 import os
 import time
 
@@ -183,6 +184,46 @@ class EmailSender:
         
         # 发送邮件
         return self._send_email(msg, recipients)
+
+
+def send_training_results_email(log_file,  pdf_path, csv_path, model_name, experiment_info=None):
+        """Send training results email"""
+        email_config_file = '.email_config.txt'
+        if os.path.exists(email_config_file):
+            try:
+                with open(email_config_file, 'r', encoding='utf-8') as f:
+                    email_config = {}
+                    for line in f:
+                        line = line.strip()
+                        if line and '=' in line:
+                            key, value = line.split('=', 1)
+                            email_config[key.strip()] = value.strip()
+                
+                sender_email = email_config.get('sender_email', '')
+                sender_password = email_config.get('sender_password', '')
+                receiver_email = email_config.get('receiver_email', '')
+                
+                if not all([sender_email, sender_password, receiver_email]):
+                    logger.warning(f"Warning: Email config file {email_config_file} is missing necessary information")
+                    logger.warning("Skip email sending")
+                else:
+                    email_sender = EmailSender(
+                        sender_email=sender_email,
+                        sender_password=sender_password
+                    )
+                    email_sender.send_experiment_notification(
+                        receiver_email=receiver_email,
+                        experiment_name=f'{model_name} Training Results',
+                        attachments=[pdf_path, csv_path, log_file],
+                        additional_info=f"{experiment_info}\n"\
+                            f"PDF_PATH: {pdf_path}\n"\
+                            f"CSV_PATH: {csv_path}\n"\
+                            f"LOG_PATH: {log_file}"
+                    )
+                    logger.info(f"Email sent to {receiver_email}")
+            except Exception as e:
+                logger.warning(f"Warning: Error reading email config file: {e}")
+                logger.warning("Skip email sending")
 
 # 使用示例
 if __name__ == "__main__":
