@@ -26,11 +26,21 @@ HQ-DET是一个轻量级的目标检测框架，集成了多个主流的目标�
 
 ## 安装
 
+### linux
 ```bash
 git clone [repository_url]
 cd hq_det
 
 # 安装依赖
+pip install -e .
+```
+
+### windows
+```bat
+python.exe -m pip install openmim
+python.exe -m mim install mmcv==2.2.0 mmdet==3.3.0 mmengine==0.10.7
+python.exe -m pip install peft==0.10.7 transformers==4.43.3
+git clone [repository_url]
 pip install -e .
 ```
 
