@@ -409,6 +409,30 @@ class RandomResize:
     pass
 
 
+class RandomAspectRatio:
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, data):
+        if random.random() <= self.p:
+            img = data['img']
+            bboxes = data['bboxes']
+
+            h, w = img.shape[:2]
+            new_h = int(h * np.random.uniform(0.5, 1.5))
+            new_w = int(w * np.random.uniform(0.5, 1.5))
+            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            x_ratio = new_w / w
+            y_ratio = new_h / h
+            bboxes_ = bboxes * np.array([x_ratio, y_ratio, x_ratio, y_ratio])
+            
+            data['img'] = img
+            data['bboxes'] = bboxes_
+            pass
+
+        return data
+
+
 class RandomPerspective:
     def __init__(self, p=0.5):
         self.p = p
