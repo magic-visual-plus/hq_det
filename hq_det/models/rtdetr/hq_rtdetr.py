@@ -86,20 +86,24 @@ class HQRTDETR(HQModel):
 
         for i, pred in enumerate(preds):
             record = PredictionResult()
-            if len(pred['labels']) == 0:
+            mask = pred["scores"] > confidence
+            if not mask.any():
+                # no pred
+                record.bboxes = np.zeros((0, 4), dtype=np.float32)
+                record.scores = np.zeros((0,), dtype=np.float32)
+                record.cls = np.zeros((0,), dtype=np.int32)
                 pass
             else:
                 # add pred
-                pred_bboxes = pred['boxes'].cpu().numpy()
-                pred_scores = pred['scores'].cpu().numpy()
-                pred_cls = pred['labels'].cpu().numpy().astype(np.int32)
+                pred_bboxes = pred['boxes'][mask].cpu().numpy()
+                pred_scores = pred['scores'][mask].cpu().numpy()
+                pred_cls = pred['labels'][mask].cpu().numpy().astype(np.int32)
                 record.bboxes = pred_bboxes
                 record.cls = pred_cls
                 record.scores = pred_scores
                 record.image_id = batch_data['targets'][i]['image_id']
-                pass
             results.append(record)
-            pass
+    
         return results
 
 
