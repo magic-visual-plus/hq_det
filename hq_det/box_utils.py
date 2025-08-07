@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.spatial.distance
 
 def xyxy2xywh(boxes):
     """
@@ -209,6 +210,90 @@ def nms(boxes, cls, scores):
     pass
 
 
-    
+def merge_two_boxes(box1, box2):
+    """
+    Merge two bounding boxes into one.
+    Args:
+        box1 (np.ndarray): First bounding box in (x1, y1, x2, y2) format.
+        box2 (np.ndarray): Second bounding box in (x1, y1, x2, y2) format.
+    Returns:
+        np.ndarray: Merged bounding box in (x1, y1, x2, y2) format.
+    """
+    x1 = min(box1[0], box2[0])
+    y1 = min(box1[1], box2[1])
+    x2 = max(box1[2], box2[2])
+    y2 = max(box1[3], box2[3])
+    return np.array([x1, y1, x2, y2], dtype=np.float32)
 
+def merge_nearby_boxes(boxes, cls, scores, area_thr=0.6):
+    # merge nearby boxes
+    # boxes: (N, 4)
+    # cls: (N, )
+    # scores: (N, )
+    # return: (N, 4)
+
+    ucls = np.unique(cls)
+    boxes_ = []
+    cls_ = []
+    scores_ = []
+    for c in ucls:
+        cmask = cls == c
+        boxes_c = boxes[cmask]
+        scores_c = scores[cmask]
+        cls_c = cls[cmask]
+        if len(boxes_c) <= 1:
+            boxes_.append(boxes_c)
+            scores_.append(scores_c)
+            cls_.append(cls_c)
+            continue
+        
+        boxes_merged_before = boxes_c.copy()
+        while True:
+            boxes_merged_after, scores_c, cls_c = try_merge_nearby_boxes(boxes_merged_before, scores_c, cls_c, area_thr)
+            if len(boxes_merged_after) == len(boxes_merged_before):
+                boxes_.append(boxes_merged_after)
+                scores_.append(scores_c)
+                cls_.append(cls_c)
+                break
+            boxes_merged_before = boxes_merged_after.copy()
+            pass
+        pass
+    boxes_ = np.concatenate(boxes_, axis=0)
+    scores_ = np.concatenate(scores_, axis=0)
+    cls_ = np.concatenate(cls_, axis=0)
+    return boxes_, cls_, scores_
+
+
+def try_merge_nearby_boxes(boxes, scores, cls, area_thr=0.6):
+    if len(boxes) <= 1:
+        return boxes, scores, cls
+
+    centers = (boxes[:, :2] + boxes[:, 2:]) / 2
+    dists = scipy.spatial.distance.cdist(centers, centers, metric='euclidean')
+    dists = dists + np.eye(len(boxes)) * 1e10  # avoid self-distance
+    near_index = np.argmin(dists, axis=1)
+
+    for idx in range(len(boxes)):
+        near_idx = near_index[idx]
+        merged = merge_two_boxes(boxes[idx], boxes[near_idx])
+        area1 = (boxes[idx][2] - boxes[idx][0]) * (boxes[idx][3] - boxes[idx][1])
+        area2 = (boxes[near_idx][2] - boxes[near_idx][0]) * (boxes[near_idx][3] - boxes[near_idx][1])
+        merged_area = (merged[2] - merged[0]) * (merged[3] - merged[1])
+        if (area1 + area2) / merged_area > area_thr:
+            # merge the two boxes
+            new_box = merged
+            new_score = (scores[idx] + scores[near_idx]) / 2
+            new_cls = cls[idx]  # or cls[near_idx], they should be the
+
+            boxes = np.delete(boxes, [idx, near_idx], axis=0)
+            boxes = np.vstack((boxes, new_box))
+            scores = np.delete(scores, [idx, near_idx])
+            scores = np.append(scores, new_score)
+            cls = np.delete(cls, [idx, near_idx])
+            cls = np.append(cls, new_cls)
+            return boxes, scores, cls
+        pass
+
+    return boxes, scores, cls
+    pass
 

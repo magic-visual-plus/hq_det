@@ -65,4 +65,4 @@ def pad_image(img, bboxes, target_shape, pad_value=0.44):
     bboxes_[:, 2] = bboxes[:, 2] * w / target_shape[1]
     bboxes_[:, 3] = bboxes[:, 3] * h / target_shape[0]
     
-    return img, bboxes
+    return img, bboxes_

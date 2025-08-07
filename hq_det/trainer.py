@@ -16,7 +16,7 @@ from torch import distributed
 from torch.nn.parallel import DistributedDataParallel as DDP
 from .models.base import HQModel
 from .dataset import CocoDetection
-from typing import List
+from typing import List, Tuple
 
 from .print_utils import (
     print_model_summary, 
@@ -170,7 +170,7 @@ class HQTrainer:
         # setup output directories
         self._setup_output_directories()
 
-    def build_dataset(self, train_transforms, val_transforms) -> tuple[CocoDetection, CocoDetection]:
+    def build_dataset(self, train_transforms, val_transforms) -> Tuple[CocoDetection, CocoDetection]:
         raise NotImplementedError
 
     def build_model(self) -> HQModel:
@@ -231,7 +231,7 @@ class HQTrainer:
         optimizer: torch.optim.Optimizer, 
         scaler: torch.cuda.amp.GradScaler, 
         device: str
-    ) -> tuple[torch.Tensor, dict]:
+    ) -> Tuple[torch.Tensor, dict]:
         batch_data = torch_utils.batch_to_device(batch_data, device)
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
             forward_result = model(batch_data)
@@ -248,7 +248,7 @@ class HQTrainer:
         
         return loss, info
 
-    def valid_step(self, model: HQModel, batch_data, device: str) -> tuple[torch.Tensor, dict, List[PredictionResult]]:
+    def valid_step(self, model: HQModel, batch_data, device: str) -> Tuple[torch.Tensor, dict, List[PredictionResult]]:
         batch_data = torch_utils.batch_to_device(batch_data, device)
         
         with torch.no_grad():
@@ -262,7 +262,7 @@ class HQTrainer:
             
             return loss, info, preds
 
-    def train_epoch(self, epoch: int) -> tuple[list[float], dict]:
+    def train_epoch(self, epoch: int) -> Tuple[List[float], dict]:
         self.model.train()
         train_losses = []
         train_info = {}
@@ -294,7 +294,7 @@ class HQTrainer:
 
         return train_losses, train_info
 
-    def valid_epoch(self, epoch: int) -> tuple[list[float], dict, dict]:
+    def valid_epoch(self, epoch: int) -> Tuple[List[float], dict, dict]:
         self.model.eval()
         val_losses = []
         val_info = dict()
@@ -325,7 +325,7 @@ class HQTrainer:
         
         return [], {}, {}
 
-    def _setup_datasets_and_transforms(self) -> tuple[CocoDetection, CocoDetection]:
+    def _setup_datasets_and_transforms(self) -> Tuple[CocoDetection, CocoDetection]:
         trainsforms_train = self.build_transforms(aug=True)
         trainsforms_val = self.build_transforms(aug=False)
         
@@ -364,7 +364,7 @@ class HQTrainer:
             print_model_summary(model)
         return model
 
-    def _setup_distributed_training(self) -> tuple[HQModel, str, torch.utils.data.Sampler, torch.utils.data.Sampler]:
+    def _setup_distributed_training(self) -> Tuple[HQModel, str, torch.utils.data.Sampler, torch.utils.data.Sampler]:
         if len(self.args.devices) > 1:
             # distributed training
             self.logger.info("Setting up distributed training environment...")
@@ -399,7 +399,7 @@ class HQTrainer:
         
         return model, device, sampler_train, sampler_val
 
-    def _setup_dataloaders(self) -> tuple[
+    def _setup_dataloaders(self) -> Tuple[
         torch.utils.data.DataLoader, 
         torch.utils.data.DataLoader
     ]:
@@ -412,7 +412,7 @@ class HQTrainer:
             collate_fn=self.collate_fn, sampler=self.sampler_val)
         return dataloader_train, dataloader_val
 
-    def _setup_optimization_components(self) -> tuple[
+    def _setup_optimization_components(self) -> Tuple[
         torch.optim.Optimizer, 
         torch.optim.lr_scheduler._LRScheduler, 
         torch.cuda.amp.GradScaler
@@ -489,8 +489,8 @@ class HQTrainer:
             lr_info[f'lr_group_{i}'] = param_group['lr']
         return lr_info
 
-    def _create_epoch_summary(self, i_epoch: int, train_losses: list[float],
-                              val_losses: list[float], val_info: dict,
+    def _create_epoch_summary(self, i_epoch: int, train_losses: List[float],
+                              val_losses: List[float], val_info: dict,
                               train_time: float, val_time: float,
                               epoch_time: float, stat: dict) -> dict:
         """create epoch summary"""
@@ -551,7 +551,7 @@ class HQTrainer:
             checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
             self.save_model(model, checkpoint_path)
 
-    def _format_time(self, time_seconds: float) -> tuple[int, int, int]:
+    def _format_time(self, time_seconds: float) -> Tuple[int, int, int]:
         """format time"""
         hours, remainder = divmod(time_seconds, 3600)
         mins, secs = divmod(remainder, 60)

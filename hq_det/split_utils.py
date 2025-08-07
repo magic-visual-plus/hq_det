@@ -15,7 +15,7 @@ def get_split_max_size(img, stride=1024, shift=20, max_split=3):
     max_hw = max(img.shape[0], img.shape[1])
     return min(max_size, max_hw)
 
-def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
+def split_image(img, boxes, cls, stride=1024, shift=20, max_split=9999, add_global=True, box_area_thr=0.0):
     splits = []
     max_size = stride * max_split - (max_split - 1) * shift
     h, w = img.shape[:2]
@@ -32,10 +32,12 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
         splits.append((img, boxes_, cls, 0, 0))
         return splits
     else:
-        rate = stride / max_hw
-        img_ = cv2.resize(img, (int(w * rate), int(h * rate)))
-        boxes_ = boxes * rate
-        splits.append((img_, boxes_, cls, 0, 0))
+        if add_global:
+            rate = stride / max_hw
+            img_ = cv2.resize(img, (int(w * rate), int(h * rate)))
+            boxes_ = boxes * rate
+            splits.append((img_, boxes_, cls, 0, 0))
+            pass
 
         # split the image
         if max_hw > max_size:
@@ -53,9 +55,9 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
                     break
 
                 if i + stride > h:
-                    i = h - stride
+                    i = max(h - stride, 0)
                 if j + stride > w:
-                    j = w - stride
+                    j = max(w - stride, 0)
 
                 startx = j
                 endx = j + stride + shift
@@ -73,7 +75,7 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
                 intersection_area = x_overlap * y_overlap
                 original_area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
-                mask = (intersection_area / original_area) > 0.5
+                mask = (intersection_area / original_area) > box_area_thr
                 # mask = (boxes[:, 0] < endx) & (boxes[:, 1] < endy) & \
                 #           (boxes[:, 2] > startx) & (boxes[:, 3] > starty)
                 
@@ -81,7 +83,7 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
                     sub_boxes = np.zeros((0, 4), dtype=np.float32)
                     sub_cls = np.zeros((0,), dtype=np.int64)
                 else:
-                    sub_boxes = boxes[mask]
+                    sub_boxes = boxes[mask].copy()
                     sub_cls = cls[mask]
                     sub_boxes[:, 0] -= startx
                     sub_boxes[:, 1] -= starty
@@ -105,7 +107,7 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=3):
 
 
 
-def split_coco(input_path, output_path, stride, shift, max_split):
+def split_coco(input_path, output_path, stride, shift, max_split, add_global=True, box_area_thr=0.0):
     os.makedirs(output_path, exist_ok=True)
 
     ann_file = os.path.join(input_path, '_annotations.coco.json')
@@ -156,7 +158,7 @@ def split_coco(input_path, output_path, stride, shift, max_split):
             boxes = np.array(boxes, dtype=np.float32)
             cls = np.array(cls, dtype=np.int64)
             pass
-        splits = split_image(img, boxes, cls, stride, shift, max_split)
+        splits = split_image(img, boxes, cls, stride, shift, max_split, add_global=add_global, box_area_thr=box_area_thr)
 
         for sub_img, sub_boxes, sub_cls, startx, starty in splits:
             sub_image_id = image_id * (max_split ** 2 + 1) + len(data_split['images'])
@@ -192,7 +194,7 @@ def split_coco(input_path, output_path, stride, shift, max_split):
     pass
 
 
-def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=False, gt_boxes=None, gt_cls=None):
+def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=False, gt_boxes=None, gt_cls=None, add_global=True, box_area_thr=0.0):
 
     if gt_boxes is not None and gt_cls is not None:
         boxes = gt_boxes
@@ -202,7 +204,7 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
         cls = np.zeros((0,), dtype=np.int64)
         pass
 
-    splits = split_image(img, boxes, cls, stride, shift, max_split)
+    splits = split_image(img, boxes, cls, stride, shift, max_split, add_global=add_global, box_area_thr=box_area_thr)
     results = []
     
     imgs = [s[0] for s in splits]
@@ -236,16 +238,14 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
         cls = cls[mask]
         scores = scores[mask]
 
-        if i == 0:
-            if True:
-            # if len(splits) == 1:
-                rate = max(sub_img.shape[0], sub_img.shape[1]) / max(img.shape[0], img.shape[1])
-                boxes = boxes / rate
-                
-                total_boxes.append(boxes)
-                total_cls.append(cls)
-                total_scores.append(scores)
-                pass
+        if add_global and i == 0:
+            # first image is the global image
+            rate = max(sub_img.shape[0], sub_img.shape[1]) / max(img.shape[0], img.shape[1])
+            boxes = boxes / rate
+            
+            total_boxes.append(boxes)
+            total_cls.append(cls)
+            total_scores.append(scores)
             pass
         else:
             rate = max(img.shape[0], img.shape[1]) / split_max_size
@@ -272,10 +272,4 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
     pred.cls = np.concatenate(total_cls, axis=0)
     pred.scores = np.concatenate(total_scores, axis=0)
 
-    keep_index = box_utils.nms(pred.bboxes, pred.cls, pred.scores)
-    pred.bboxes = pred.bboxes[keep_index]
-    pred.cls = pred.cls[keep_index]
-    pred.scores = pred.scores[keep_index]
-
-    
     return pred

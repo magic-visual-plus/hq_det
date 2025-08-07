@@ -146,26 +146,30 @@ class HQRTDETR(HQModel):
             pass
         
         max_size = self.image_size
+        imgs_ = []
         img_scales = np.ones((len(imgs),))
         if max_size > 0:
             for i in range(len(imgs)):
                 max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
                 if max_hw > max_size:
                     rate = max_size / max_hw
-                    imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
+                    imgs_.append(cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate))))
                     img_scales[i] = rate
+                    pass
+                else:
+                    imgs_.append(imgs[i])
                     pass
                 pass
             pass
 
         original_shapes = []
-        for img in imgs:
+        for img in imgs_:
             original_shapes.append(img.shape)
             pass
         device = self.device
         start = time.time()
         with torch.no_grad():
-            batch_data = self.imgs_to_batch(imgs)
+            batch_data = self.imgs_to_batch(imgs_)
             batch_data = torch_utils.batch_to_device(batch_data, device)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
                 forward_result = self.forward(batch_data)
@@ -174,10 +178,10 @@ class HQRTDETR(HQModel):
 
         for i in range(len(preds)):
             pred = preds[i]
-            pred.bboxes[:, 0] = pred.bboxes[:, 0] / self.image_size * original_shapes[i][1]
-            pred.bboxes[:, 1] = pred.bboxes[:, 1] / self.image_size * original_shapes[i][0]
-            pred.bboxes[:, 2] = pred.bboxes[:, 2] / self.image_size * original_shapes[i][1]
-            pred.bboxes[:, 3] = pred.bboxes[:, 3] / self.image_size * original_shapes[i][0]
+            # pred.bboxes[:, 0] = pred.bboxes[:, 0] / self.image_size * original_shapes[i][1]
+            # pred.bboxes[:, 1] = pred.bboxes[:, 1] / self.image_size * original_shapes[i][0]
+            # pred.bboxes[:, 2] = pred.bboxes[:, 2] / self.image_size * original_shapes[i][1]
+            # pred.bboxes[:, 3] = pred.bboxes[:, 3] / self.image_size * original_shapes[i][0]
             pred.bboxes = pred.bboxes / img_scales[i]
             pass
 

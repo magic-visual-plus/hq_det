@@ -13,6 +13,7 @@ from tqdm import tqdm
 import time
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+from hq_det import box_utils
 
 
 FONT_PATH= '/root/autodl-tmp/simsun.ttc'
@@ -45,15 +46,13 @@ if __name__ == '__main__':
     for filename in tqdm(filenames):
         img = cv2.imread(filename)
 
-        if '49fbab' in filename:
-            print('filename:', filename)
+        if '1749385768499_20240704044647583' in filename:
+            x = 11
             pass
         
         start = time.time()
-        if '4f63a5' in filename:
-            print('filename:', filename)
-            pass
-        result = split_utils.predict_split(model, img, 0.3, 1024, 20, 2)
+        result = split_utils.predict_split(model, img, 0.3, 2048, 0, 100, bgr=True, add_global=False, box_area_thr=0.0)
+        result.bboxes, result.cls, result.scores = box_utils.merge_nearby_boxes(result.bboxes, result.cls, result.scores, area_thr=0.6)
         print('time:', time.time() - start)
 
         for i, bbox in enumerate(result.bboxes):
