@@ -232,6 +232,9 @@ def merge_nearby_boxes(boxes, cls, scores, area_thr=0.6):
     # scores: (N, )
     # return: (N, 4)
 
+    if len(boxes) == 0:
+        return boxes, cls, scores
+    
     ucls = np.unique(cls)
     boxes_ = []
     cls_ = []
