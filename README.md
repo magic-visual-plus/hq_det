@@ -40,7 +40,7 @@ pip install -e .
 python.exe -m pip install --upgrade pip
 python.exe -m pip install openmim
 python.exe -m mim install mmcv==2.1.0 mmdet==3.3.0 mmengine==0.10.7
-python.exe -m pip install peft==0.10.0 transformers==4.43.3 tokenizers<0.19
+python.exe -m pip install peft==0.10.0 transformers==4.43.3 accelerate==1.9.0
 git clone [repository_url]
 pip install -e .
 ```
