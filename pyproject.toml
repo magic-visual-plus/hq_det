@@ -29,5 +29,5 @@ where = ["."]
 include = ["hq_det*"]
 exclude = ["tests"]
 
-[tools.setuptools.package-data]
+[tool.setuptools.package-data]
 hq_det = ["**/*.yml", "*.yml"]
