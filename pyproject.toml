@@ -30,4 +30,4 @@ include = ["hq_det*"]
 exclude = ["tests"]
 
 [tools.setuptools.package-data]
-hq_det = ["**/*.yml"]
+hq_det = ["**/*.yml", "*.yml"]
