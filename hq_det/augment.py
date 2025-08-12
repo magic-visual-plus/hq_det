@@ -384,14 +384,26 @@ class RandomGrayScale:
     pass
 
 class RandomResize:
-    def __init__(self, p=0.5):
+    def __init__(self, p=0.5, max_size=None):
         self.p = p
+        self.max_size = max_size
 
     def __call__(self, data):
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
             cls = data['cls']
+            if self.max_size is not None:
+                h, w = img.shape[:2]
+                max_hw = max(h, w)
+                if max_hw > self.max_size:
+                    scale = self.max_size / max_hw
+                    new_h, new_w = int(h * scale), int(w * scale)
+                    img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                    bboxes = bboxes * scale
+                    bboxes, cls = box_utils.filter_invalid_boxes(bboxes, cls, img.shape[1], img.shape[0])
+                    pass
+                pass
 
             scale = np.random.uniform(0.5, 1.5)
             new_h, new_w = int(img.shape[0] * scale), int(img.shape[1] * scale)
