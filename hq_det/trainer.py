@@ -90,7 +90,7 @@ class DefaultAugmentation:
     """default data augmentation class"""
     
     @staticmethod
-    def get_train_transforms(image_size, p=0.1):
+    def get_train_transforms(image_size, p=0.3):
         """get train data augmentation"""
         transforms = []
         transforms.append(augment.ToNumpy())
@@ -298,6 +298,7 @@ class HQTrainer:
         self.model.eval()
         val_losses = []
         val_info = dict()
+        stat = dict()
         all_preds = []
         all_gts = []
 
@@ -320,10 +321,10 @@ class HQTrainer:
             bar_val.close()
             val_info = divide_stats(val_info, len(self.dataloader_val))
             stat = self._process_validation_results(all_preds, all_gts, self.eval_class_ids)
-            
-            return val_losses, val_info, stat
-        
-        return [], {}, {}
+            pass
+
+        # distributed.barrier()
+        return val_losses, val_info, stat
 
     def _setup_datasets_and_transforms(self) -> Tuple[CocoDetection, CocoDetection]:
         trainsforms_train = self.build_transforms(aug=True)
@@ -361,7 +362,8 @@ class HQTrainer:
         """build model and log number of parameters"""
         model = self.build_model()
         if self.HQ_DEBUG:
-            print_model_summary(model)
+            # print_model_summary(model)
+            pass
         return model
 
     def _setup_distributed_training(self) -> Tuple[HQModel, str, torch.utils.data.Sampler, torch.utils.data.Sampler]:
@@ -375,7 +377,7 @@ class HQTrainer:
             device_id = rank % torch.cuda.device_count()
             device = f'cuda:{device_id}'
             self.model.to(device)
-            model = DDP(self.model, device_ids=[device_id])
+            model = DDP(self.model, device_ids=[device_id], find_unused_parameters=False)
             
             self.logger.info(f"Distributed training initialized - Rank: {rank}, Device: {device}, World Size: {torch.distributed.get_world_size()}")
             
@@ -605,14 +607,14 @@ class HQTrainer:
             
             # Update training state
             self._update_training_state(i_epoch, train_info, val_info, stat.get('mAP', 0.0))
-            
+
             # Save results and checkpoints
             if self.is_master():
                 self.save_epoch_result(i_epoch, stat, self.args.output_path)
                 self._save_best_model(self.model, stat.get('mAP', 0.0))
             
             self._save_checkpoint(self.model)
-            
+
             # Check early stopping
             if self.args.early_stopping and \
                 self._check_early_stopping(summary['val_loss'], self.args.early_stopping_patience):
@@ -622,6 +624,8 @@ class HQTrainer:
             # Update scheduler
             if i_epoch >= self.args.warmup_epochs:
                 self.scheduler.step()
+                pass
+            pass
         
         # log training summary
         self._log_training_summary(start_time)
