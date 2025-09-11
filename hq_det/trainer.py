@@ -443,7 +443,7 @@ class HQTrainer:
     def _save_best_model(self, model: HQModel, metric: float) -> None:
         """save best model"""
         if self._should_save_best_model(metric) and self.is_master():
-            best_model_path = os.path.join(self.args.checkpoint_path, 'best_model')
+            best_model_path = os.path.join(self.args.checkpoint_path, 'best_model.pth')
             self.save_model(model, best_model_path)
             self.logger.info(f'New best model saved with metric: {metric:.4f}')
 
@@ -548,7 +548,7 @@ class HQTrainer:
     def _save_checkpoint(self, model: HQModel) -> None:
         """save checkpoint"""
         if self.is_master():
-            checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
+            checkpoint_path = os.path.join(self.args.checkpoint_path, self.args.checkpoint_name)
             self.save_model(model, checkpoint_path)
 
     def _format_time(self, time_seconds: float) -> Tuple[int, int, int]:

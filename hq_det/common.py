@@ -69,6 +69,7 @@ class HQTrainerArguments(pydantic.BaseModel):
     
     # 输出相关
     checkpoint_path: str = 'output'    # 检查点路径
+    checkpoint_name: str = 'ckpt'    # 检查点名称
     output_path: str = 'output'    # 输出路径
     checkpoint_interval: int = 10    # 检查点间隔
     

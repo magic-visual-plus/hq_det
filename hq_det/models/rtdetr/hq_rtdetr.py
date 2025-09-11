@@ -224,7 +224,7 @@ class HQRTDETR(HQModel):
                     'module': self.model.state_dict()
                 },
                 'id2names': self.id2names,
-            }, path + '.pth')
+            }, path)
         pass
 
 

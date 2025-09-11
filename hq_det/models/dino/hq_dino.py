@@ -200,7 +200,7 @@ class HQDINO(HQModel):
                         'CLASSES': self.get_class_names(),
                     },
                 }
-            }, path + '.pth')
+            }, path)
         pass
 
     def to(self, device):
