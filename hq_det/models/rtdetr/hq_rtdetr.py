@@ -25,16 +25,17 @@ class HQRTDETR(HQModel):
         current_module_path = __file__
         config_path = os.path.join(
             os.path.dirname(current_module_path), 'configs', 'rtdetrv2', 'rtdetrv2_r50vd_m_7x_coco.yml')
-        
+
+        self.image_size = kwargs.get('image_size', 1024)
+        print('=================================', kwargs)
         cfg = YAMLConfig(config_path)
         cfg.yaml_cfg['num_classes'] = len(self.id2names)
         cfg.yaml_cfg['remap_mscoco_category'] = False
-        cfg.yaml_cfg['eval_spatial_size'] = [1024, 1024]
+        cfg.yaml_cfg['eval_spatial_size'] = [self.image_size, self.image_size]
         self.model = cfg.model
         self.criterion = cfg.criterion
         self.postprocessor = cfg.postprocessor
         self.load_model(kwargs['model'])
-        self.image_size = kwargs.get('image_size', 1024)
         self.device = 'cpu'
 
     def get_class_names(self):

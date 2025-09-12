@@ -62,6 +62,7 @@ class RTDETRCriterionv2(nn.Module):
         target_classes[idx] = target_classes_o
         target = F.one_hot(target_classes, num_classes=self.num_classes+1)[..., :-1]
         loss = torchvision.ops.sigmoid_focal_loss(src_logits, target.float(), self.alpha, self.gamma, reduction='none')
+        # loss = F.binary_cross_entropy_with_logits(src_logits, target.float(), reduction='none')
         loss = loss.mean(1).sum() * src_logits.shape[1] / num_boxes
 
         return {'loss_focal': loss}
@@ -149,8 +150,11 @@ class RTDETRCriterionv2(nn.Module):
         num_boxes = sum(len(t["labels"]) for t in targets)
         num_boxes = torch.as_tensor([num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device)
         if is_dist_available_and_initialized():
-            torch.distributed.all_reduce(num_boxes)
-        num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
+            # do validation only in master
+            # torch.distributed.all_reduce(num_boxes)
+            pass
+        # num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
+        num_boxes = torch.clamp(num_boxes, min=1).item()
         
         # Retrieve the matching between the outputs of the last layer and the targets
         matched = self.matcher(outputs_without_aux, targets)

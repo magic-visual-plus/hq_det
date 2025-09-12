@@ -1,6 +1,6 @@
 import torch
 from mmdet.structures import DetDataSample
-from hq_det.models.rfdetr.util.misc import NestedTensor
+# from hq_det.models.rfdetr.util.misc import NestedTensor
 
 def batch_to_device(batch, device):
     """
@@ -19,7 +19,7 @@ def batch_to_device(batch, device):
         return tuple(batch_to_device(item, device) for item in batch)
     elif isinstance(batch, dict):
         return {key: batch_to_device(value, device) for key, value in batch.items()}
-    elif isinstance(batch, (DetDataSample, NestedTensor)):
+    elif isinstance(batch, (DetDataSample,)):
         return batch.to(device)
     else:
         return batch
