@@ -64,11 +64,11 @@ class HQTrainerArguments(pydantic.BaseModel):
     lr_backbone_mult: float = 1    # 主干网络学习率倍数
     
     # 设备相关
-    device: str = 'cuda:0'    # 设备
     devices: List[int] = [0]    # 设备列表
     
     # 输出相关
     checkpoint_path: str = 'output'    # 检查点路径
+    checkpoint_name: str = 'ckpt'    # 检查点名称
     output_path: str = 'output'    # 输出路径
     checkpoint_interval: int = 10    # 检查点间隔
     
@@ -78,3 +78,5 @@ class HQTrainerArguments(pydantic.BaseModel):
     # 类别相关
     class_id2names: dict = None    # 类别ID到名称的映射
     eval_class_names: List[str] = None    # 评估类别名称
+
+    find_unused_parameters: bool = False  # DDP 寻找未使用的参数

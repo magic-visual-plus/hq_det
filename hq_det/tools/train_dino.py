@@ -78,13 +78,14 @@ class MyTrainer(HQTrainer):
 
 def run(
         data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=4, image_size=1024,
-        gradient_update_interval=1, devices=[0], lr_backbone_mult=0.1):
+        gradient_update_interval=1, devices=[0], lr_backbone_mult=0.1, num_data_workers=12, checkpoint_name='ckpt.pth'
+    ):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
             num_epoches=num_epoches,
             warmup_epochs=0,
-            num_data_workers=12,
+            num_data_workers=num_data_workers,
             lr0=lr0,
             lr_min=1e-6,
             lr_backbone_mult=lr_backbone_mult,
@@ -100,6 +101,7 @@ def run(
             eval_class_names=eval_class_names,
             gradient_update_interval=gradient_update_interval,
             devices=devices,
+            checkpoint_name=checkpoint_name,
         )
     )
     trainer.run()

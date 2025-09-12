@@ -377,7 +377,7 @@ class HQTrainer:
             device_id = rank % torch.cuda.device_count()
             device = f'cuda:{device_id}'
             self.model.to(device)
-            model = DDP(self.model, device_ids=[device_id], find_unused_parameters=False)
+            model = DDP(self.model, device_ids=[device_id], find_unused_parameters=self.args.find_unused_parameters)
             
             self.logger.info(f"Distributed training initialized - Rank: {rank}, Device: {device}, World Size: {torch.distributed.get_world_size()}")
             
@@ -393,7 +393,8 @@ class HQTrainer:
             self.logger.info("Setting up single GPU training environment...")
             sampler_train = torch.utils.data.RandomSampler(self.dataset_train)
             sampler_val = torch.utils.data.SequentialSampler(self.dataset_val)
-            device = self.args.device[0] if not isinstance(self.args.device, str) else self.args.device
+            device = self.args.devices[0]
+            device = f'cuda:{device}' if torch.cuda.is_available() else 'cpu'
             self.model.to(device)
             model = self.model
             
@@ -445,7 +446,7 @@ class HQTrainer:
     def _save_best_model(self, model: HQModel, metric: float) -> None:
         """save best model"""
         if self._should_save_best_model(metric) and self.is_master():
-            best_model_path = os.path.join(self.args.checkpoint_path, 'best_model')
+            best_model_path = os.path.join(self.args.checkpoint_path, 'best_model.pth')
             self.save_model(model, best_model_path)
             self.logger.info(f'New best model saved with metric: {metric:.4f}')
 
@@ -550,7 +551,7 @@ class HQTrainer:
     def _save_checkpoint(self, model: HQModel) -> None:
         """save checkpoint"""
         if self.is_master():
-            checkpoint_path = os.path.join(self.args.checkpoint_path, 'ckpt')
+            checkpoint_path = os.path.join(self.args.checkpoint_path, self.args.checkpoint_name)
             self.save_model(model, checkpoint_path)
 
     def _format_time(self, time_seconds: float) -> Tuple[int, int, int]:

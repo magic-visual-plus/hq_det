@@ -85,7 +85,8 @@ class MyTrainer(HQTrainer):
 
 
 def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=6, image_size=1024,
-        gradient_update_interval=1, lr_backbone_mult=1.0, num_data_workers=8, devices=[0]):
+        gradient_update_interval=1, lr_backbone_mult=1.0, num_data_workers=16, checkpoint_name='ckpt.pth',
+        devices=[0]):
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -96,7 +97,7 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_na
             lr_min=1e-6,
             lr_backbone_mult=lr_backbone_mult,
             batch_size=batch_size,
-            device='cuda:0',
+            devices=devices,
             output_path=output_path,
             checkpoint_path=output_path,
             checkpoint_interval=-1,
@@ -107,7 +108,8 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_na
             },
             eval_class_names=eval_class_names,
             gradient_update_interval=gradient_update_interval,
-            devices=devices
+            checkpoint_name=checkpoint_name,
+            find_unused_parameters=True,
         )
     )
     trainer.run()
