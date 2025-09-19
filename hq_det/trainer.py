@@ -141,8 +141,6 @@ class HQTrainer:
             'val_info': {},         # validation metrics
         }
         self.HQ_DEBUG =  int(os.environ.get('HQ_DEBUG', '1'))
-        
-        self.setup_training_environment()
 
     def setup_training_environment(self):
         # print training arguments
@@ -192,7 +190,10 @@ class HQTrainer:
         return torch.optim.AdamW(param_dict, lr=self.args.lr0)
 
     def build_scheduler(self, optimizer: torch.optim.Optimizer) -> torch.optim.lr_scheduler._LRScheduler:
-        raise NotImplementedError
+        return torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
+            end_factor=self.args.lr_min / self.args.lr0
+        )
     
     def is_master(self) -> bool:
         return len(self.args.devices) == 1 or (torch.distributed.is_initialized() and torch.distributed.get_rank() == 0)
@@ -575,6 +576,8 @@ class HQTrainer:
         return self._early_stopping_counter >= patience
 
     def run(self) -> None:
+        self.setup_training_environment()
+
         """main training process"""
         self.logger.info("Start training...")
         self.scheduler.step()
