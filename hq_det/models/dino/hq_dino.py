@@ -27,7 +27,7 @@ class HQDINO(HQModel):
         dino_config.model['bbox_head']['num_classes'] = len(self.id2names)
         self.model = MODELS.build(dino_config.model)
         self.load_model(kwargs['model'])
-        self.device = 'cpu'
+        self.device = torch.device('cpu')
 
     def get_class_names(self):
         # Get the class names from the model

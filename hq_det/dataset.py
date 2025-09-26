@@ -265,3 +265,26 @@ class SplitDataset(Dataset):
             self.buffer.append((img, boxes, cls, startx, starty, sub_image_id))
             pass
         pass
+    pass
+
+
+class CombinedDataset(Dataset):
+    def __init__(self, datasets, weights):
+        self.datasets = datasets
+        self.weights = weights
+
+        self.p = [w * len(d) for d, w in zip(self.datasets, self.weights)]
+        self.p = [pp / sum(self.p) for pp in self.p]
+        self.class_id2names = copy.deepcopy(datasets[0].class_id2names)
+        pass
+
+    def __len__(self):
+        min_idx = np.argmin([len(d) for d in self.datasets])
+        return sum([int(len(self.datasets[min_idx]) * pp / self.p[min_idx]) for pp in self.p])
+    
+    def __getitem__(self, idx):
+        dataset_idx = np.random.choice(len(self.datasets), p=self.p)
+        dataset = self.datasets[dataset_idx]
+        data_idx = random.randint(0, len(dataset) - 1)
+        data = dataset[data_idx]
+        return data
