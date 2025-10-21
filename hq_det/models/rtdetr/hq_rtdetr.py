@@ -16,17 +16,20 @@ class HQRTDETR(HQModel):
         super(HQRTDETR, self).__init__()
 
         if class_id2names is None:
+            # load from model file
             data = torch.load(kwargs['model'], map_location='cpu')
             self.id2names = data['id2names']
+            
+            self.image_size = kwargs.get('image_size', data.get('image_size', 1024))
         else:
             self.id2names = class_id2names
+            self.image_size = kwargs.get('image_size', 1024)
             pass
 
         current_module_path = __file__
         config_path = os.path.join(
             os.path.dirname(current_module_path), 'configs', 'rtdetrv2', 'rtdetrv2_r50vd_m_7x_coco.yml')
 
-        self.image_size = kwargs.get('image_size', 1024)
         print('=================================', kwargs)
         cfg = YAMLConfig(config_path)
         cfg.yaml_cfg['num_classes'] = len(self.id2names)
@@ -225,6 +228,7 @@ class HQRTDETR(HQModel):
                     'module': self.model.state_dict()
                 },
                 'id2names': self.id2names,
+                'image_size': self.image_size,
             }, path)
         pass
 
