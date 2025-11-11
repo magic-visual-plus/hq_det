@@ -366,6 +366,93 @@ class RandomBrightness:
         return data
     pass
 
+class RandomPixelValueShift:
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, data):
+        if random.random() <= self.p:
+            img = data['img']
+            img = img.astype(np.float32)
+            shift = np.random.randint(-30, 30)
+            img = img + shift
+            img = np.clip(img, 0, 255).astype(np.uint8)
+            data['img'] = img
+            pass
+        
+        return data
+    pass
+
+class RandomShift:
+    def __init__(self, p=0.5, max_shift=0.2):
+        self.p = p
+        self.max_shift = max_shift
+
+    def __call__(self, data):
+        if random.random() <= self.p:
+            compensation = random.random() < 0.5
+            img = data['img']
+            bboxes = data['bboxes']
+            cls = data['cls']
+
+            h, w = img.shape[:2]
+            max_dx = int(w * self.max_shift)
+            max_dy = int(h * self.max_shift)
+            dx = np.random.randint(-max_dx, max_dx)
+            dy = np.random.randint(-max_dy, max_dy)
+
+            if any([box[0] + dx < 0 or box[2] + dx > w or box[1] + dy < 0 or box[3] + dy > h for box in bboxes]):
+                # do NOT shift if any box goes out of image
+                return data
+            if any([box[0] - dx < 0 or box[2] - dx > w or box[1] - dy < 0 or box[3] - dy > h for box in bboxes]):
+                # do NOT shift if any box goes out of image (compensation case)
+                return data
+            
+            img_ = np.random.randint(0, 256, img.shape, dtype=img.dtype)
+            if dx >= 0 and dy >= 0:
+                img_[dy:, dx:] = img[0:h - dy, 0:w - dx]
+                if compensation:
+                    img_[0:dy, :] = img[h-dy:, :]
+                    img_[:, 0:dx] = img[:, w - dx:]
+                    pass
+
+            elif dx >= 0 and dy < 0:
+                img_[0:h + dy, dx:] = img[-dy:h, 0:w - dx]
+                if compensation:
+                    img_[h + dy:, :] = img[h + dy:, :]
+                    img_[:, 0:dx] = img[:, w - dx:]
+                    pass
+            elif dx < 0 and dy >= 0:
+                img_[dy:, 0:w + dx] = img[0:h - dy, -dx:w]
+                if compensation:
+                    img_[0:dy, :] = img[h - dy:, :]
+                    img_[:, w + dx:] = img[:, w + dx:]
+                    pass
+            else:  # dx < 0 and dy < 0
+                img_[0:h + dy, 0:w + dx] = img[-dy:h, -dx:w]
+                if compensation:
+                    img_[h + dy:, :] = img[h + dy:, :]
+                    img_[:, w + dx:] = img[:, w + dx:]
+                    pass
+                pass
+
+            img = img_
+
+            bboxes_ = bboxes.copy()
+            bboxes_[:, 0] += dx
+            bboxes_[:, 1] += dy
+            bboxes_[:, 2] += dx
+            bboxes_[:, 3] += dy
+
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            
+            data['img'] = img
+            data['bboxes'] = bboxes_
+            data['cls'] = cls_
+            pass
+
+        return data
+    pass
 
 class RandomGrayScale:
     def __init__(self, p=0.5):
