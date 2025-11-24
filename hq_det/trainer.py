@@ -108,6 +108,7 @@ class DefaultAugmentation:
         transforms.append(augment.RandomNoise(p=p))
         transforms.append(augment.RandomBrightness(p=p, alpha=0.1))
         transforms.append(augment.RandomCrop(p=p))
+        transforms.append(augment.RandomPixelValueShift(p=p))
         transforms.append(augment.RandomResize(p=p, max_size=image_size))
         
         # basic processing
