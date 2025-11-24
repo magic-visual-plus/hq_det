@@ -187,9 +187,9 @@ class RandomRotate90:
 
 
 class RandomRotate:
-    def __init__(self, p=0.5):
+    def __init__(self, p=0.5, degrees=10):
         self.p = p
-        self.transform = iaa.Affine(rotate=(-10, 10))
+        self.transform = iaa.Affine(rotate=(-degrees, degrees))
         pass
 
     def __call__(self, data):
@@ -345,8 +345,9 @@ class RandomBlur:
 
 
 class RandomBrightness:
-    def __init__(self, p=0.5):
+    def __init__(self, p=0.5, alpha=0.5):
         self.p = p
+        self.alpha = alpha
 
     def __call__(self, data):
         if random.random() <= self.p:
@@ -357,7 +358,7 @@ class RandomBrightness:
                 pass
 
             if np.random.rand() < self.p:
-                alpha = np.random.uniform(0.9, 1.1)
+                alpha = np.random.uniform(1 - self.alpha, 1.0 + self.alpha)
                 img = cv2.convertScaleAbs(img, alpha=alpha)
                 pass
 
