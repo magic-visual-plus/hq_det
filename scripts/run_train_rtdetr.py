@@ -17,7 +17,7 @@ if __name__ == '__main__':
     train_rtdetr.run(
         data_path=sys.argv[1],
         output_path='output',
-        num_epoches = 180,
+        num_epoches=int(os.environ.get('NUM_EPOCHES', '180')),
         lr0=1e-4,
         load_checkpoint=sys.argv[2],
         eval_class_names=[]
