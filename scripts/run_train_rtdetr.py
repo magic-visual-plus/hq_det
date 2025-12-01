@@ -18,6 +18,7 @@ if __name__ == '__main__':
         data_path=sys.argv[1],
         output_path='output',
         num_epoches=int(os.environ.get('NUM_EPOCHES', '180')),
+        batch_size=int(os.environ.get('BATCH_SIZE', '6')),
         lr0=1e-4,
         load_checkpoint=sys.argv[2],
         eval_class_names=[]
