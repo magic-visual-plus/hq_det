@@ -14,6 +14,7 @@ from hq_det.tools import train_rtdetr
 
 
 if __name__ == '__main__':
+    devices = list(range(int(os.getenv("GPU_NUM", "1"))))
     train_rtdetr.run(
         data_path=sys.argv[1],
         output_path='output',
@@ -21,6 +22,7 @@ if __name__ == '__main__':
         batch_size=int(os.environ.get('BATCH_SIZE', '6')),
         lr0=1e-4,
         load_checkpoint=sys.argv[2],
-        eval_class_names=[]
+        eval_class_names=[],
+        devices=devices
     )
     pass
