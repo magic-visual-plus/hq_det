@@ -80,4 +80,4 @@ class HQTrainerArguments(pydantic.BaseModel):
     eval_class_names: List[str] = None    # 评估类别名称
 
     find_unused_parameters: bool = False  # DDP 寻找未使用的参数
-    sync_bn: bool = False  # 是否启用同步 BatchNorm（分布式训练）
+    sync_bn: bool = True  # 是否启用同步 BatchNorm（分布式训练）
