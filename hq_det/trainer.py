@@ -96,6 +96,11 @@ class DefaultAugmentation:
         transforms.append(augment.ToNumpy())
         
         # 数据增强
+        transforms.append(augment.RandomCrop(p=p))
+        transforms.append(augment.RandomResize(p=p, max_size=image_size))
+        # prevent image is too big for speed
+        transforms.append(augment.Resize(max_size=image_size*2))
+
         transforms.append(augment.RandomHorizontalFlip())
         transforms.append(augment.RandomVerticalFlip())
         transforms.append(augment.RandomGrayScale())
@@ -107,9 +112,8 @@ class DefaultAugmentation:
         transforms.append(augment.RandomPerspective(p=p))
         transforms.append(augment.RandomNoise(p=p))
         transforms.append(augment.RandomBrightness(p=p, alpha=0.1))
-        transforms.append(augment.RandomCrop(p=p))
         transforms.append(augment.RandomPixelValueShift(p=p))
-        transforms.append(augment.RandomResize(p=p, max_size=image_size))
+        transforms.append(augment.RandomShift(p=p, max_shift=0.02))
         
         # basic processing
         transforms.append(augment.Resize(max_size=image_size))
