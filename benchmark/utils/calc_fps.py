@@ -5,7 +5,7 @@ from tqdm import tqdm
 from typing import List
 import cv2
 
-def official_fps_test_forward(model, batch_data, precision="FP16", batch_size=1):  
+def official_fps_test_forward(model, batch_data, precision="FP16", batch_size=1, total_tests=1000):  
     """  
     official FPS test  
     """  
@@ -20,18 +20,18 @@ def official_fps_test_forward(model, batch_data, precision="FP16", batch_size=1)
     print(f"PyTorch: {torch.__version__}")  
     
     print("warming up...")  
-    for _ in range(100):  
-        with torch.no_grad():  
+    for _ in range(5):  
+        with torch.inference_mode():  
             _ = model(batch_data)  
       
     print("start FPS test...")  
     times = []  
     
-    for i in tqdm(range(1000), desc="FPS test progress"):  
+    for i in tqdm(range(total_tests), desc="FPS test progress"):  
         torch.cuda.synchronize()  
         start = time.perf_counter()  
         
-        with torch.no_grad():  
+        with torch.inference_mode():
             output = model(batch_data)  
         
         torch.cuda.synchronize()  
@@ -39,7 +39,8 @@ def official_fps_test_forward(model, batch_data, precision="FP16", batch_size=1)
         
         times.append(end - start)  
     
-    times = sorted(times)[100:900]  # drop the first 10% and the last 10%  
+    drop_count = len(times) // 10
+    times = sorted(times)[drop_count:-drop_count]  # drop the first 10% and the last 10%  
     avg_time = np.mean(times)  
     std_time = np.std(times)  
     
@@ -55,7 +56,7 @@ def official_fps_test_forward(model, batch_data, precision="FP16", batch_size=1)
     
     return 1.0 / avg_time  
 
-def official_fps_test_predict(model, img_paths: List[str], precision="FP16", max_size=1024):
+def official_fps_test_predict(model, img_paths: List[str], precision="FP16", max_size=1024, batch_size=1, total_tests=1000):
     """  
     official FPS test for predict (包含后处理)
     """  
@@ -78,37 +79,34 @@ def official_fps_test_predict(model, img_paths: List[str], precision="FP16", max
     
     print("warming up...")  
     # 预热阶段
-    for _ in range(50):  
-        img = cv2.imread(filenames[0])
-        with torch.no_grad():  
-            _ = model.predict([img], bgr=True, confidence=0.3, max_size=max_size)
+    for _ in range(5):  
+        imgs = [cv2.imread(filenames[i]) for i in range(batch_size)]
+        with torch.inference_mode():
+            _ = model.predict(imgs, bgr=True, confidence=0.3, max_size=max_size)
     
     print("start FPS test...")  
     times = []
     
     # 如果图片数量不足1000张，则循环使用
-    total_tests = 1000
     for i in tqdm(range(total_tests), desc="FPS test progress"):
         # 循环使用图片
-        img_idx = i % len(filenames)
-        filename = filenames[img_idx]
+        img_indices = [(i * batch_size + j) % len(filenames) for j in range(batch_size)]
+        batch_filenames = [filenames[idx] for idx in img_indices]
         
-        img = cv2.imread(filename)
-        if img is None:
-            continue
+        imgs = [cv2.imread(filename) for filename in batch_filenames]
             
         torch.cuda.synchronize()
         start = time.perf_counter()
         
-        with torch.no_grad():
-            results = model.predict([img], bgr=True, confidence=0.3, max_size=max_size)
+        with torch.inference_mode():
+            results = model.predict(imgs, bgr=True, confidence=0.3, max_size=max_size)
         
         torch.cuda.synchronize()
         end = time.perf_counter()
         
         times.append(end - start)
     
-    if len(times) < 200:
+    if len(times) < 2:
         print("Warning: Not enough valid test samples!")
         return 0.0
     

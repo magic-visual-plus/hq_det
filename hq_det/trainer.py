@@ -383,9 +383,16 @@ class HQTrainer:
             device_id = rank % torch.cuda.device_count()
             device = f'cuda:{device_id}'
             self.model.to(device)
+            
+            # according to the hyper-parameter to decide whether to enable sync BatchNorm
+            if self.args.sync_bn:
+                self.logger.info("Converting BatchNorm to SyncBatchNorm for distributed training...")
+                self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+            
             model = DDP(self.model, device_ids=[device_id], find_unused_parameters=self.args.find_unused_parameters)
             
-            self.logger.info(f"Distributed training initialized - Rank: {rank}, Device: {device}, World Size: {torch.distributed.get_world_size()}")
+            sync_bn_status = "enabled" if self.args.sync_bn else "disabled"
+            self.logger.info(f"Distributed training initialized - Rank: {rank}, Device: {device}, World Size: {torch.distributed.get_world_size()}, SyncBN: {sync_bn_status}")
             
             sampler_train = torch.utils.data.distributed.DistributedSampler(
                 self.dataset_train,
