@@ -399,6 +399,10 @@ class RandomShift:
             h, w = img.shape[:2]
             max_dx = int(w * self.max_shift)
             max_dy = int(h * self.max_shift)
+
+            if max_dx <= 0 or max_dy <= 0:
+                return data
+                
             dx = np.random.randint(-max_dx, max_dx)
             dy = np.random.randint(-max_dy, max_dy)
 
