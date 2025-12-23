@@ -103,8 +103,8 @@ class DefaultAugmentation:
 
         transforms.append(augment.RandomHorizontalFlip())
         transforms.append(augment.RandomVerticalFlip())
-        transforms.append(augment.RandomGrayScale())
-        transforms.append(augment.RandomShuffleChannel())
+        transforms.append(augment.RandomGrayScale(p=p))
+        transforms.append(augment.RandomShuffleChannel(p=p))
         transforms.append(augment.RandomRotate90(p=p))
         transforms.append(augment.RandomAspectRatio(p=p))
         transforms.append(augment.RandomRotate(p=p, degrees=30))
