@@ -16,7 +16,7 @@ dependencies = [
     "imgaug",
     "mmcv",
     "pydantic",
-    "tensorboard",
+    "tensorboard>2.4.1",
     "faster-coco-eval",
     "loguru",
     "supervision",
