@@ -41,7 +41,12 @@ if __name__ == '__main__':
 
             for cat in annotations['categories']:
                 if cat['name'] in category_names:
-                    category_id_map[cat['id']] = category_names[cat['name']]['id']
+                    if args.same_category and cat['name'] in ['其他', '其它']:
+                        # ignore 'other' category when merging with same_category option
+                        pass
+                    else:
+                        category_id_map[cat['id']] = category_names[cat['name']]['id']
+                        pass
                     pass
                 else:
                     # add new category
