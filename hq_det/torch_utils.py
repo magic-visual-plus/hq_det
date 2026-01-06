@@ -66,3 +66,34 @@ def pad_image(img, bboxes, target_shape, pad_value=0.44):
     bboxes_[:, 3] = bboxes[:, 3] * h / target_shape[0]
     
     return img, bboxes_
+
+def pad_image_array(img, bboxes, target_shape, pad_value=0.44):
+    """
+    Pad an image (numpy array) to the target shape with a specified padding value.
+    
+    Args:
+        img (np.ndarray): The input image array.
+        target_shape (tuple): The target shape (height, width) for padding.
+        pad_value (float): The value to use for padding.
+    
+    Returns:
+        np.ndarray: The padded image array.
+    """
+    import numpy as np
+    h, w = img.shape[:2]
+    if h == target_shape[0] and w == target_shape[1]:
+        return img, bboxes
+    
+    pad_left = 0
+    pad_top = 0
+    pad_right = target_shape[1] - w
+    pad_bottom = target_shape[0] - h
+    img = np.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=pad_value)
+
+    boxes_ = bboxes.clone()
+    boxes_[:, 0] = bboxes[:, 0] * w / target_shape[1]
+    boxes_[:, 1] = bboxes[:, 1] * h / target_shape[0]
+    boxes_[:, 2] = bboxes[:, 2] * w / target_shape[1]
+    boxes_[:, 3] = bboxes[:, 3] * h / target_shape[0]
+    
+    return img, boxes_
