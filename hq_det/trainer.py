@@ -17,6 +17,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from .models.base import HQModel
 from .dataset import CocoDetection
 from typing import List, Tuple
+from detectron2.config import instantiate
 
 from .print_utils import (
     print_model_summary, 
@@ -166,6 +167,8 @@ class HQTrainer:
         
         # setup dataloaders
         self.dataloader_train, self.dataloader_val = self._setup_dataloaders()
+        # self.dataloader_train = instantiate(self.args.cfg.dataloader.train)
+        # self.dataloader_val = instantiate(self.args.cfg.dataloader.test)
         
         # setup optimization components
         self.optimizer, self.scheduler, self.scaler = self._setup_optimization_components()
@@ -242,6 +245,23 @@ class HQTrainer:
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
             forward_result = model(batch_data)
             loss, info = self.compute_loss(model, batch_data, forward_result)
+            # loss_dict = model(batch_data)
+            # if isinstance(loss_dict, torch.Tensor):
+            #     losses = loss_dict
+            #     loss_dict = {"total_loss": loss_dict}
+            # else:
+            #     loss = sum(loss_dict.values())
+            
+            # info = {
+            #     # 总损失 = 分类损失 + 边界框损失 + GIoU损失
+            #     'loss': (loss_dict['loss_class'] + loss_dict['loss_bbox'] + loss_dict['loss_giou']).item(),
+            #     # cls对应分类损失（loss_class）
+            #     'cls': loss_dict['loss_class'].item(),
+            #     # box对应边界框损失（loss_bbox）
+            #     'box': loss_dict['loss_bbox'].item(),
+            #     # giou对应GIoU损失（loss_giou）
+            #     'giou': loss_dict['loss_giou'].item(),
+            #     }
             
             # gradient synchronization for distributed training
             if len(self.args.devices) > 1:
