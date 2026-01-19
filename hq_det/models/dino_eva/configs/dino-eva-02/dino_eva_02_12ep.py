@@ -12,7 +12,7 @@ from detrex.modeling.matcher import HungarianMatcher
 from detrex.modeling.neck import ChannelMapper
 from detrex.layers import PositionEmbeddingSine
 
-from ..common.gear_loader_lsj_1024 import dataloader
+# from ..common.gear_loader_lsj_1024 import dataloader
 
 from hq_det.models.dino_eva.modeling import (
     DINO,

@@ -12,7 +12,7 @@ if __name__ == '__main__':
         lr0=1e-4,
         load_checkpoint='/root/autodl-tmp/dino_eva_02_in21k_pretrain_vitdet_b_4attn_1024_lrd0p7_4scale_12ep.pth',
         eval_class_names=[],
-        batch_size=1,
+        batch_size=2,
         image_size=1024,
         gradient_update_interval=16,
         lr_backbone_mult=1.0,

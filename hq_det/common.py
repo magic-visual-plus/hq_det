@@ -2,7 +2,7 @@ import pydantic
 import numpy as np
 from typing import List
 from . import box_utils
-
+from omegaconf import DictConfig
 
 class PredictionResult(pydantic.BaseModel):
     # model_config  = pydantic.ConfigDict(arbitrary_types_allowed=True)
@@ -41,7 +41,9 @@ class PredictionResult(pydantic.BaseModel):
 
 
 class HQTrainerArguments(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(protected_namespaces=())    # 模型配置
+    model_config = pydantic.ConfigDict(protected_namespaces=(), arbitrary_types_allowed=True)    # 模型配置
+
+    cfg: DictConfig = DictConfig({})
     
     # 数据集相关
     data_path: str    # 数据集路径

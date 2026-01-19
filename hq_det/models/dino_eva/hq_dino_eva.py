@@ -1,5 +1,6 @@
 from mmengine import MODELS, Config
 import torch.nn
+import torch.nn.functional as F
 from detectron2.config import LazyConfig, instantiate
 from ...common import PredictionResult
 from ..base import HQModel
@@ -63,8 +64,50 @@ class HQDINO_EVA(HQModel):
         # img_feats = self.model.extract_feat(inputs)
         # head_inputs_dict = self.model.forward_transformer(
         #     img_feats, data_samples)
-        batch_data = self.model.preprocess_image(batch_data)
+        images, img_size = self.model.preprocess_image(batch_data)
+
+        if self.training:
+            batch_size, _, H, W = images.tensor.shape
+            img_masks = images.tensor.new_ones(batch_size, H, W)
+            for img_id in range(batch_size):
+                img_h, img_w = batch_data["data_samples"][img_id].img_shape
+                img_masks[img_id, :img_h, :img_w] = 0
+        else:
+            batch_size, _, H, W = images.tensor.shape
+            img_masks = images.tensor.new_ones(batch_size, H, W)
+            for img_id in range(batch_size):
+                img_h, img_w = img_size[img_id][0], img_size[img_id][1]
+                img_masks[img_id, :img_h, :img_w] = 0
         
+        features = self.model.backbone(images.tensor)  # output feature dict
+        
+        multi_level_feats = self.model.neck(features)
+        multi_level_masks = []
+        multi_level_position_embeddings = []
+        for feat in multi_level_feats:
+            multi_level_masks.append(
+                F.interpolate(img_masks[None], size=feat.shape[-2:]).to(torch.bool).squeeze(0)
+            )
+            multi_level_position_embeddings.append(self.model.position_embedding(multi_level_masks[-1]))
+        
+        if self.training:
+            # gt_instances = [x["instances"].to(self.device) for x in batch_data]
+            targets = self.model.prepare_targets(batch_data, batch_size, img_size)
+            input_query_label, input_query_bbox, attn_mask, dn_meta = self.prepare_for_cdn(
+                targets,
+                dn_number=self.dn_number,
+                label_noise_ratio=self.label_noise_ratio,
+                box_noise_scale=self.box_noise_scale,
+                num_queries=self.num_queries,
+                num_classes=self.num_classes,
+                hidden_dim=self.embed_dim,
+                label_enc=self.label_enc,
+            )
+        else:
+            input_query_label, input_query_bbox, attn_mask, dn_meta = None, None, None, None
+        query_embeds = (input_query_label, input_query_bbox)
+
+
         return {
             'img_feats': img_feats,
             'head_inputs_dict': head_inputs_dict,
