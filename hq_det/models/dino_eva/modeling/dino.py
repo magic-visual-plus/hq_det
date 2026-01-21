@@ -591,11 +591,11 @@ class DINO(nn.Module):
             h, w = img_size[img_id]
             image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float, device=self.device)
             img_mask = (batch_idx == img_id)
-            gt_classes = targets["cls"][img_mask] if targets["cls"].numel() > 0 else torch.tensor([], device=self.device)
-            gt_boxes_xyxy = targets["bboxes_xyxy"][img_mask] if targets["bboxes_xyxy"].numel() > 0 else torch.tensor([], device=self.device)
+            gt_classes = targets["cls"][img_mask] if targets["cls"].numel() > 0 else torch.tensor([], dtype=torch.long, device=self.device)
+            gt_boxes_xyxy = targets["bboxes_xyxy"][img_mask] if targets["bboxes_xyxy"].numel() > 0 else torch.tensor([], dtype=torch.float, device=self.device)
             
             if gt_boxes_xyxy.numel() > 0: 
-                gt_boxes = targets["bboxes_xyxy"][img_id] / image_size_xyxy
+                gt_boxes = gt_boxes_xyxy / image_size_xyxy
                 gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
             else:
                 gt_boxes = torch.tensor([], dtype=torch.float, device=self.device).reshape(0, 4)

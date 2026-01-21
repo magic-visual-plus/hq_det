@@ -10,7 +10,8 @@ from hq_det import torch_utils
 from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
 from ..models.base import HQModel
-from typing import Tuple
+from ..common import PredictionResult
+from typing import List, Tuple
 from torch import distributed
 
 class MyTrainer(HQTrainer):
@@ -87,8 +88,8 @@ class MyTrainer(HQTrainer):
     ) -> Tuple[torch.Tensor, dict]:
         batch_data = torch_utils.batch_to_device(batch_data, device)
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
-            forward_result = model(batch_data)
-            loss, info = self.compute_loss(model, batch_data, forward_result)
+            forward_result, targets, dn_meta = model(batch_data)
+            loss, info = self.compute_loss(model, batch_data, forward_result, targets, dn_meta)
             # loss_dict = model(batch_data)
             # if isinstance(loss_dict, torch.Tensor):
             #     losses = loss_dict
@@ -117,6 +118,20 @@ class MyTrainer(HQTrainer):
         scaler.scale(loss / self.args.gradient_update_interval).backward()
         
         return loss, info
+    
+    def valid_step(self, model: HQModel, batch_data, device: str) -> Tuple[torch.Tensor, dict, List[PredictionResult]]:
+        batch_data = torch_utils.batch_to_device(batch_data, device)
+        
+        with torch.no_grad():
+            forward_result = model(batch_data)
+            loss, info, results = self.compute_loss(model, batch_data, forward_result)
+            preds = self.postprocess(model, batch_data, results)
+            
+            # set image id for prediction results
+            for pred, image_id in zip(preds, batch_data['image_id']):
+                pred.image_id = image_id
+            
+            return loss, info, preds
 
 
 

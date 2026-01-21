@@ -1,7 +1,9 @@
 from mmengine import MODELS, Config
 import torch.nn
 import torch.nn.functional as F
+from detrex.utils import inverse_sigmoid
 from detectron2.config import LazyConfig, instantiate
+from detectron2.modeling import detector_postprocess
 from ...common import PredictionResult
 from ..base import HQModel
 import numpy as np
@@ -93,43 +95,100 @@ class HQDINO_EVA(HQModel):
         if self.training:
             # gt_instances = [x["instances"].to(self.device) for x in batch_data]
             targets = self.model.prepare_targets(batch_data, batch_size, img_size)
-            input_query_label, input_query_bbox, attn_mask, dn_meta = self.prepare_for_cdn(
+            input_query_label, input_query_bbox, attn_mask, dn_meta = self.model.prepare_for_cdn(
                 targets,
-                dn_number=self.dn_number,
-                label_noise_ratio=self.label_noise_ratio,
-                box_noise_scale=self.box_noise_scale,
-                num_queries=self.num_queries,
-                num_classes=self.num_classes,
-                hidden_dim=self.embed_dim,
-                label_enc=self.label_enc,
+                dn_number=self.model.dn_number,
+                label_noise_ratio=self.model.label_noise_ratio,
+                box_noise_scale=self.model.box_noise_scale,
+                num_queries=self.model.num_queries,
+                num_classes=self.model.num_classes,
+                hidden_dim=self.model.embed_dim,
+                label_enc=self.model.label_enc,
             )
         else:
             input_query_label, input_query_bbox, attn_mask, dn_meta = None, None, None, None
         query_embeds = (input_query_label, input_query_bbox)
 
+        (
+            inter_states,
+            init_reference,
+            inter_references,
+            enc_state,
+            enc_reference,  # [0..1]
+        ) = self.model.transformer(
+            multi_level_feats,
+            multi_level_masks,
+            multi_level_position_embeddings,
+            query_embeds,
+            attn_masks=[attn_mask, None],
+        )
+        # hack implementation for distributed training
+        inter_states[0] += self.model.label_enc.weight[0, 0] * 0.0
 
-        return {
-            'img_feats': img_feats,
-            'head_inputs_dict': head_inputs_dict,
-        }
-        pass
+        # Calculate output coordinates and classes.
+        outputs_classes = []
+        outputs_coords = []
+        for lvl in range(inter_states.shape[0]):
+            if lvl == 0:
+                reference = init_reference
+            else:
+                reference = inter_references[lvl - 1]
+            reference = inverse_sigmoid(reference)
+            outputs_class = self.model.class_embed[lvl](inter_states[lvl])
+            tmp = self.model.bbox_embed[lvl](inter_states[lvl])
+            if reference.shape[-1] == 4:
+                tmp += reference
+            else:
+                assert reference.shape[-1] == 2
+                tmp[..., :2] += reference
+            outputs_coord = tmp.sigmoid()
+            outputs_classes.append(outputs_class)
+            outputs_coords.append(outputs_coord)
+        outputs_class = torch.stack(outputs_classes)
+        # tensor shape: [num_decoder_layers, bs, num_query, num_classes]
+        outputs_coord = torch.stack(outputs_coords)
+        # tensor shape: [num_decoder_layers, bs, num_query, 4]
+
+        # denoising postprocessing
+        if dn_meta is not None:
+            outputs_class, outputs_coord = self.model.dn_post_process(
+                outputs_class, outputs_coord, dn_meta
+            )
+
+        # prepare for loss computation
+        output = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord[-1]}
+        if self.model.aux_loss:
+            output["aux_outputs"] = self.model._set_aux_loss(outputs_class, outputs_coord)
+
+        # prepare two stage output
+        interm_coord = enc_reference
+        interm_class = self.model.transformer.decoder.class_embed[-1](enc_state)
+        output["enc_outputs"] = {"pred_logits": interm_class, "pred_boxes": interm_coord}
+        
+
+        if self.training:
+            return output, targets, dn_meta
+        else:
+            output['images_sizes'] = images.image_sizes
+            return output
+        pass    
     
     def preprocess(self, batch_data):
         # Preprocess the input data for the YOLO model
         pass
 
-    def postprocess(self, forward_result, batch_data, confidence=0.0):
+    def postprocess(self, inference_results, batch_data, confidence=0.0):
         # Post-process the predictions
-        head_inputs_dict = forward_result['head_inputs_dict']
+        # head_inputs_dict = forward_result['head_inputs_dict']
 
-        preds = self.model.bbox_head.predict(
-            head_inputs_dict['hidden_states'],
-            head_inputs_dict['references'],
-            batch_data_samples = batch_data['data_samples'],
-            rescale=False)
+        # preds = self.model.bbox_head.predict(
+        #     head_inputs_dict['hidden_states'],
+        #     head_inputs_dict['references'],
+        #     batch_data_samples = batch_data['data_samples'],
+        #     rescale=False)
 
         results = []
-        for pred in preds:
+        for pred in inference_results:
             record = PredictionResult()
             mask = pred.scores > confidence
             if not mask.any():
@@ -140,9 +199,9 @@ class HQDINO_EVA(HQModel):
                 pass
             else:
                 # add pred
-                pred_bboxes = pred.bboxes[mask].cpu().numpy()
+                pred_bboxes = pred.pred_boxes[mask].tensor.cpu().numpy()
                 pred_scores = pred.scores[mask].cpu().numpy()
-                pred_cls = pred.labels[mask].cpu().numpy().astype(np.int32)
+                pred_cls = pred.pred_classes[mask].cpu().numpy().astype(np.int32)
                 record.bboxes = pred_bboxes
                 record.scores = pred_scores
                 record.cls = pred_cls
@@ -215,34 +274,72 @@ class HQDINO_EVA(HQModel):
 
         return preds
 
-    def compute_loss(self, batch_data, forward_result):
+    def compute_loss(self, batch_data, forward_result, targets=None, dn_meta=None):
         # Compute the loss using the YOLO model
         # This is a placeholder; actual implementation may vary
-        head_inputs_dict = forward_result['head_inputs_dict']
-        data_samples = batch_data['data_samples']
-        if self.model.training:
-
-            losses = self.model.bbox_head.loss(
-                **head_inputs_dict, batch_data_samples=data_samples)
-            
-            loss, info = self.model.parse_losses(losses)
+        if self.training:
+            loss_dict = self.model.criterion(forward_result, targets, dn_meta)
+            weight_dict = self.model.criterion.weight_dict
+            for k in loss_dict.keys():
+                if k in weight_dict:
+                    loss_dict[k] *= weight_dict[k]
+            total_loss = sum(loss for loss in loss_dict.values())
 
             info = {
-                'loss': loss.item(),
-                'cls': info['loss_cls'].item(),
-                'box': info['loss_bbox'].item(),
-                'giou': info['loss_iou'].item(),
+                'loss': total_loss.item(),
+                'cls': loss_dict['loss_class'].item(),
+                'box': loss_dict['loss_bbox'].item(),
+                'giou': loss_dict['loss_giou'].item(),
             }
+            return total_loss, info
         else:
-            loss = torch.tensor(0.0, device=head_inputs_dict['hidden_states'].device)
+            loss = torch.tensor(0.0, device=self.model.device)
             info = {
                 'loss': 0.0,
                 'cls': 0.0,
                 'box': 0.0,
                 'giou': 0.0,
             }
-            pass
-        return loss, info
+            box_cls = forward_result["pred_logits"]
+            box_pred = forward_result["pred_boxes"]
+            image_sizes = forward_result["images_sizes"]
+            results = self.model.inference(box_cls, box_pred, image_sizes)
+            # processed_results = []
+            # for results_per_image, input_per_image, image_size in zip(
+            #     results, forward_result, image_sizes
+            # ):
+            #     height = input_per_image.get("height", image_size[0])
+            #     width = input_per_image.get("width", image_size[1])
+            #     r = detector_postprocess(results_per_image, height, width)
+            #     processed_results.append({"instances": r})
+            return loss, info, results
+
+
+        # head_inputs_dict = forward_result['head_inputs_dict']
+        # data_samples = batch_data['data_samples']
+        # if self.model.training:
+
+        #     losses = self.model.bbox_head.loss(
+        #         **head_inputs_dict, batch_data_samples=data_samples)
+            
+        #     loss, info = self.model.parse_losses(losses)
+
+        #     info = {
+        #         'loss': loss.item(),
+        #         'cls': info['loss_cls'].item(),
+        #         'box': info['loss_bbox'].item(),
+        #         'giou': info['loss_iou'].item(),
+        #     }
+        # else:
+        #     loss = torch.tensor(0.0, device=head_inputs_dict['hidden_states'].device)
+        #     info = {
+        #         'loss': 0.0,
+        #         'cls': 0.0,
+        #         'box': 0.0,
+        #         'giou': 0.0,
+        #     }
+        #     pass
+        # return loss, info
 
     def save(self, path):
         # Save the YOLO model to the specified path

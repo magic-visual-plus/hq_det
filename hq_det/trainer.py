@@ -206,10 +206,10 @@ class HQTrainer:
     def is_master(self) -> bool:
         return len(self.args.devices) == 1 or (torch.distributed.is_initialized() and torch.distributed.get_rank() == 0)
     
-    def compute_loss(self, model: HQModel, batch_data, forward_result):
+    def compute_loss(self, model: HQModel, batch_data, forward_result, targets=None, dn_meta=None):
         if isinstance(model, DDP):
             model = model.module
-        return model.compute_loss(batch_data, forward_result)
+        return model.compute_loss(batch_data, forward_result, targets, dn_meta)
     
     def postprocess(self, model: HQModel, batch_data, forward_result) -> List[PredictionResult]:
         if isinstance(model, DDP):
@@ -245,23 +245,6 @@ class HQTrainer:
         with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=self.args.enable_amp):
             forward_result = model(batch_data)
             loss, info = self.compute_loss(model, batch_data, forward_result)
-            # loss_dict = model(batch_data)
-            # if isinstance(loss_dict, torch.Tensor):
-            #     losses = loss_dict
-            #     loss_dict = {"total_loss": loss_dict}
-            # else:
-            #     loss = sum(loss_dict.values())
-            
-            # info = {
-            #     # 总损失 = 分类损失 + 边界框损失 + GIoU损失
-            #     'loss': (loss_dict['loss_class'] + loss_dict['loss_bbox'] + loss_dict['loss_giou']).item(),
-            #     # cls对应分类损失（loss_class）
-            #     'cls': loss_dict['loss_class'].item(),
-            #     # box对应边界框损失（loss_bbox）
-            #     'box': loss_dict['loss_bbox'].item(),
-            #     # giou对应GIoU损失（loss_giou）
-            #     'giou': loss_dict['loss_giou'].item(),
-            #     }
             
             # gradient synchronization for distributed training
             if len(self.args.devices) > 1:
