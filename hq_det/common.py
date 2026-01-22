@@ -42,8 +42,6 @@ class PredictionResult(pydantic.BaseModel):
 
 class HQTrainerArguments(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(protected_namespaces=(), arbitrary_types_allowed=True)    # 模型配置
-
-    cfg: DictConfig = DictConfig({})
     
     # 数据集相关
     data_path: str    # 数据集路径

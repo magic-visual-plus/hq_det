@@ -60,8 +60,6 @@ def format_stats(info):
 
 def extract_ground_truth(batch_data):
     batch_size = len(batch_data['image_id'])
-    gt_boxes = batch_data['bboxes_xyxy']
-    gt_cls = batch_data['cls']
     image_ids = batch_data['image_id']
 
     gt_records = []
@@ -313,6 +311,10 @@ class HQTrainer:
             # gradient accumulation
             if i_batch % self.args.gradient_update_interval == 0:
                 self.optimizer_step(self.optimizer, self.scaler, self.model)
+                pass
+
+            if i_batch > 128:
+                break
         
         # process last batch
         if i_batch % self.args.gradient_update_interval != 0:

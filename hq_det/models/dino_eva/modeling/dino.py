@@ -512,7 +512,7 @@ class DINO(nn.Module):
         """
         Normalize, pad and batch the input images.
         """
-        images = [x for x in batched_inputs["image"]]
+        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         
         img_size = [[img.shape[1], img.shape[2]] for img in images]
@@ -581,26 +581,13 @@ class DINO(nn.Module):
             results.append(result)
         return results
 
-    def prepare_targets(self, targets, batch_size, img_size):
+    def prepare_targets(self, targets):
         new_targets = []
-
-        if "batch_idx" not in targets:
-            raise KeyError("targets必须包含'batch_idx'字段，用于区分每张图的标注")
-        batch_idx = targets["batch_idx"]  # 形状为[N,]的张量，值为0,1,...batch_size-1
-        for img_id in range(batch_size):
-            h, w = img_size[img_id]
+        for targets_per_image in targets:
+            h, w = targets_per_image.image_size
             image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float, device=self.device)
-            img_mask = (batch_idx == img_id)
-            gt_classes = targets["cls"][img_mask] if targets["cls"].numel() > 0 else torch.tensor([], device=self.device)
-            gt_boxes_xyxy = targets["bboxes_xyxy"][img_mask] if targets["bboxes_xyxy"].numel() > 0 else torch.tensor([], device=self.device)
-            
-            if gt_boxes_xyxy.numel() > 0: 
-                gt_boxes = targets["bboxes_xyxy"][img_id] / image_size_xyxy
-                gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
-            else:
-                gt_boxes = torch.tensor([], dtype=torch.float, device=self.device).reshape(0, 4)
-            
-            # gt_boxes = targets["bboxes_xyxy"][img_id] / image_size_xyxy
-            # gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
+            gt_classes = targets_per_image.gt_classes
+            gt_boxes = targets_per_image.gt_boxes.tensor / image_size_xyxy
+            gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
             new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
         return new_targets

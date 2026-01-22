@@ -9,12 +9,13 @@ from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
 import cv2
 from typing import List
-from ... import torch_utils
+from ... import torch_utils, box_utils
+import detectron2.structures
 import os
 
 
 class HQDINO_EVA(HQModel):
-    def __init__(self, class_id2names=None, dino_eva_config=None, **kwargs):
+    def __init__(self, class_id2names=None, **kwargs):
         super(HQDINO_EVA, self).__init__(class_id2names, **kwargs)
         if class_id2names is None:
             data = torch.load(kwargs['model'], map_location='cpu')
@@ -23,10 +24,12 @@ class HQDINO_EVA(HQModel):
         else:
             self.id2names = class_id2names
 
-        # current_dir = os.path.dirname(os.path.abspath(__file__))
-        # dino_eva_config_path = os.path.join(current_dir, 'configs', 'dino-eva-02', 'dino_eva_02_12ep.py')
-        # dino_eva_config = Config.fromfile(dino_eva_config_path)
-        # dino_eva_config = LazyConfig.load(dino_eva_config_path)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        dino_eva_config_path = os.path.join(
+            current_dir, 'configs', 'dino-eva-02',
+            'dino_eva_02_vitdet_b_4attn_1024_lrd0p7_4scale_12ep.py')
+        dino_eva_config = Config.fromfile(dino_eva_config_path)
+        dino_eva_config = LazyConfig.load(dino_eva_config_path)
         # print(LazyConfig.to_py(dino_eva_config)) #查看配置结构
         # print(dino_eva_config)
         dino_eva_config.model.num_classes = len(self.id2names)
@@ -58,60 +61,13 @@ class HQDINO_EVA(HQModel):
 
 
     def forward(self, batch_data):
-        # batch_data.update(self.model.data_preprocessor(batch_data, self.training))
-        # inputs = batch_data['inputs']
-        # data_samples = batch_data['data_samples']
-        # img_feats = self.model.extract_feat(inputs)
-        # head_inputs_dict = self.model.forward_transformer(
-        #     img_feats, data_samples)
-        images, img_size = self.model.preprocess_image(batch_data)
-
-        if self.training:
-            batch_size, _, H, W = images.tensor.shape
-            img_masks = images.tensor.new_ones(batch_size, H, W)
-            for img_id in range(batch_size):
-                img_h, img_w = batch_data["data_samples"][img_id].img_shape
-                img_masks[img_id, :img_h, :img_w] = 0
+        batch_data = batch_data['inputs']
+        if self.model.training:
+            loss_dict = self.model.forward(batch_data)
+            return loss_dict
         else:
-            batch_size, _, H, W = images.tensor.shape
-            img_masks = images.tensor.new_ones(batch_size, H, W)
-            for img_id in range(batch_size):
-                img_h, img_w = img_size[img_id][0], img_size[img_id][1]
-                img_masks[img_id, :img_h, :img_w] = 0
-        
-        features = self.model.backbone(images.tensor)  # output feature dict
-        
-        multi_level_feats = self.model.neck(features)
-        multi_level_masks = []
-        multi_level_position_embeddings = []
-        for feat in multi_level_feats:
-            multi_level_masks.append(
-                F.interpolate(img_masks[None], size=feat.shape[-2:]).to(torch.bool).squeeze(0)
-            )
-            multi_level_position_embeddings.append(self.model.position_embedding(multi_level_masks[-1]))
-        
-        if self.training:
-            # gt_instances = [x["instances"].to(self.device) for x in batch_data]
-            targets = self.model.prepare_targets(batch_data, batch_size, img_size)
-            input_query_label, input_query_bbox, attn_mask, dn_meta = self.prepare_for_cdn(
-                targets,
-                dn_number=self.dn_number,
-                label_noise_ratio=self.label_noise_ratio,
-                box_noise_scale=self.box_noise_scale,
-                num_queries=self.num_queries,
-                num_classes=self.num_classes,
-                hidden_dim=self.embed_dim,
-                label_enc=self.label_enc,
-            )
-        else:
-            input_query_label, input_query_bbox, attn_mask, dn_meta = None, None, None, None
-        query_embeds = (input_query_label, input_query_bbox)
-
-
-        return {
-            'img_feats': img_feats,
-            'head_inputs_dict': head_inputs_dict,
-        }
+            return_dict = self.model.forward(batch_data)
+            return return_dict
         pass
     
     def preprocess(self, batch_data):
@@ -120,18 +76,18 @@ class HQDINO_EVA(HQModel):
 
     def postprocess(self, forward_result, batch_data, confidence=0.0):
         # Post-process the predictions
-        head_inputs_dict = forward_result['head_inputs_dict']
 
-        preds = self.model.bbox_head.predict(
-            head_inputs_dict['hidden_states'],
-            head_inputs_dict['references'],
-            batch_data_samples = batch_data['data_samples'],
-            rescale=False)
-
+        batch_size = len(forward_result)
         results = []
-        for pred in preds:
+        for i in range(batch_size):
+            instances = forward_result[i]['instances']
+            pred_boxes = instances.pred_boxes.tensor
+            pred_scores = instances.scores
+            pred_classes = instances.pred_classes
+
             record = PredictionResult()
-            mask = pred.scores > confidence
+
+            mask = pred_scores > confidence
             if not mask.any():
                 # no pred
                 record.bboxes = np.zeros((0, 4), dtype=np.float32)
@@ -140,38 +96,60 @@ class HQDINO_EVA(HQModel):
                 pass
             else:
                 # add pred
-                pred_bboxes = pred.bboxes[mask].cpu().numpy()
-                pred_scores = pred.scores[mask].cpu().numpy()
-                pred_cls = pred.labels[mask].cpu().numpy().astype(np.int32)
-                record.bboxes = pred_bboxes
-                record.scores = pred_scores
-                record.cls = pred_cls
+                bboxes = pred_boxes[mask].cpu().numpy()
+                scores = pred_scores[mask].cpu().numpy()
+                cls = pred_classes[mask].cpu().numpy()
+                record.bboxes = bboxes
+                record.scores = scores
+                record.cls = cls
                 pass
             results.append(record)
         return results
         
+    @classmethod
+    def imgs_to_batch(cls, imgs, boxes=None, labels=None):
+        '''
+            batched_inputs (List[dict]): A list of instance dict, and each instance dict must consists of:
+                - dict["image"] (torch.Tensor): The unnormalized image tensor.
+                - dict["height"] (int): The original image height.
+                - dict["width"] (int): The original image width.
+                - dict["instances"] (detectron2.structures.Instances):
+                    Image meta informations and ground truth boxes and labels during training.
+                    Please refer to
+                    https://detectron2.readthedocs.io/en/latest/modules/structures.html#detectron2.structures.Instances
+                    for the basic usage of Instances.
+        '''
+        batch_size = len(imgs)
+        batch_data = []
+        for i in range(batch_size):
+            data = {}
+            img = imgs[i]
+            data['image'] = torch.tensor(img.transpose(2, 0, 1), dtype=torch.float32)
+            data['height'] = img.shape[0]
+            data['width'] = img.shape[1]
 
-    def imgs_to_batch(self, imgs):
-        # Convert a list of images to a batch
+            instance = detectron2.structures.Instances(
+                image_size=(img.shape[0], img.shape[1])
+            )
+            if boxes is not None and labels is not None:
+                boxes_i = boxes[i]
+                labels_i = labels[i]
+                if len(boxes_i) == 0:
+                    boxes_i = torch.zeros((0, 4), dtype=torch.float32)
+                    labels_i = torch.zeros((0,), dtype=torch.int64)
+                    pass
+                pass
+            else:
+                boxes_i = torch.zeros((0, 4), dtype=torch.float32)
+                labels_i = torch.zeros((0,), dtype=torch.int64)
+                pass
+            instance.gt_boxes = detectron2.structures.Boxes(boxes_i)
+            instance.gt_classes = labels_i
+            data['instances'] = instance
 
-        batch_data = {
-            "inputs": [],
-            "data_samples": [],
-        }
-
-        for img in imgs:
-            img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
-            batch_data['inputs'].append(img)
-            data_sample = DetDataSample(metainfo={
-                'img_shape': (img.shape[1], img.shape[2]),
-            })
-
-            gt_instance = InstanceData()
-            data_sample.gt_instances = gt_instance
-
-            batch_data['data_samples'].append(data_sample)
+            batch_data.append(data)
             pass
-
+        
         return batch_data
         pass
 
@@ -196,10 +174,10 @@ class HQDINO_EVA(HQModel):
             pass
         device = self.device
         with torch.no_grad():
-            batch_data = self.imgs_to_batch(imgs)
+            batch_data = HQDINO_EVA.imgs_to_batch(imgs)
             batch_data = torch_utils.batch_to_device(batch_data, device)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
-                forward_result = self.forward(batch_data)
+                forward_result = self.forward({"inputs": batch_data})
                 preds = self.postprocess(forward_result, batch_data, confidence)
                 pass
             pass
@@ -216,33 +194,18 @@ class HQDINO_EVA(HQModel):
         return preds
 
     def compute_loss(self, batch_data, forward_result):
-        # Compute the loss using the YOLO model
-        # This is a placeholder; actual implementation may vary
-        head_inputs_dict = forward_result['head_inputs_dict']
-        data_samples = batch_data['data_samples']
         if self.model.training:
-
-            losses = self.model.bbox_head.loss(
-                **head_inputs_dict, batch_data_samples=data_samples)
-            
-            loss, info = self.model.parse_losses(losses)
-
+            loss_dict = forward_result
+            loss = sum(loss_dict.values())
             info = {
-                'loss': loss.item(),
-                'cls': info['loss_cls'].item(),
-                'box': info['loss_bbox'].item(),
-                'giou': info['loss_iou'].item(),
+                "class": loss_dict["loss_class"].item(),
+                "bbox": loss_dict["loss_bbox"].item(),
+                "giou": loss_dict["loss_giou"].item(),
             }
+            return loss, info
         else:
-            loss = torch.tensor(0.0, device=head_inputs_dict['hidden_states'].device)
-            info = {
-                'loss': 0.0,
-                'cls': 0.0,
-                'box': 0.0,
-                'giou': 0.0,
-            }
-            pass
-        return loss, info
+            return torch.tensor(0, device=self.device), dict()
+
 
     def save(self, path):
         # Save the YOLO model to the specified path
