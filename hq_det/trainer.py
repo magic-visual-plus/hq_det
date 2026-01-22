@@ -17,7 +17,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from .models.base import HQModel
 from .dataset import CocoDetection
 from typing import List, Tuple
-from detectron2.config import instantiate
 
 from .print_utils import (
     print_model_summary, 
@@ -167,8 +166,6 @@ class HQTrainer:
         
         # setup dataloaders
         self.dataloader_train, self.dataloader_val = self._setup_dataloaders()
-        # self.dataloader_train = instantiate(self.args.cfg.dataloader.train)
-        # self.dataloader_val = instantiate(self.args.cfg.dataloader.test)
         
         # setup optimization components
         self.optimizer, self.scheduler, self.scaler = self._setup_optimization_components()
