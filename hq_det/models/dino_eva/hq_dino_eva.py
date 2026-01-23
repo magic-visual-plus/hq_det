@@ -124,6 +124,7 @@ class HQDINO_EVA(HQModel):
         for i in range(batch_size):
             data = {}
             img = imgs[i]
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             data['image'] = torch.tensor(img.transpose(2, 0, 1), dtype=torch.float32)
             data['height'] = img.shape[0]
             data['width'] = img.shape[1]

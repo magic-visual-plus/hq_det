@@ -312,9 +312,6 @@ class HQTrainer:
             if i_batch % self.args.gradient_update_interval == 0:
                 self.optimizer_step(self.optimizer, self.scaler, self.model)
                 pass
-
-            if i_batch > 128:
-                break
         
         # process last batch
         if i_batch % self.args.gradient_update_interval != 0:
