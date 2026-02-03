@@ -171,6 +171,9 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         if self._transforms is not None:
             _target = self._transforms(target)
             pass
+        else:
+            _target = copy.deepcopy(target)
+            pass
         
         return _target
     

@@ -324,8 +324,9 @@ class RandomNoise:
 
 
 class RandomBlur:
-    def __init__(self, p=0.5):
+    def __init__(self, p=0.5, ksize=[3, 5, 7]):
         self.p = p
+        self.ksize = ksize
 
     def __call__(self, data):
         img = data['img']
@@ -335,8 +336,8 @@ class RandomBlur:
             pass
 
         if np.random.rand() < self.p:
-            ksize = np.random.randint(3, 7, 2) * 2 + 1
-            img = cv2.GaussianBlur(img, ksize, 0)
+            ksize = np.random.choice(self.ksize)
+            img = cv2.GaussianBlur(img, (ksize, ksize), 0)
             pass
 
         data['img'] = img

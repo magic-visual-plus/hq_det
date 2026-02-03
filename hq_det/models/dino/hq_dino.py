@@ -39,7 +39,7 @@ class HQDINO(HQModel):
 
     def load_model(self, path):
         # Load the YOLO model using the specified path and device
-        data = torch.load(path, map_location='cpu')
+        data = torch.load(path, map_location='cpu', weights_only=False)
         new_state_dict={k: v for k, v in data['state_dict'].items() if data['state_dict'][k].shape == self.model.state_dict()[k].shape}
         print(len(new_state_dict), len(data['state_dict']))
         self.model.load_state_dict(new_state_dict, strict=False)
@@ -105,6 +105,7 @@ class HQDINO(HQModel):
         }
 
         for img in imgs:
+            img = cv2.GaussianBlur(img, (3, 3), 0)
             img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
             batch_data['inputs'].append(img)
             data_sample = DetDataSample(metainfo={

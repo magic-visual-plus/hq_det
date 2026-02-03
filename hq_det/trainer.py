@@ -117,6 +117,7 @@ class DefaultAugmentation:
         
         # basic processing
         transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.RandomBlur(p=1.0, ksize=[3,5,7,9]))
         transforms.append(augment.FilterSmallBox())
         transforms.append(augment.Format())
         
@@ -128,6 +129,7 @@ class DefaultAugmentation:
         transforms = []
         transforms.append(augment.ToNumpy())
         transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.RandomBlur(p=1.0, ksize=[3]))
         transforms.append(augment.FilterSmallBox())
         transforms.append(augment.Format())
         
