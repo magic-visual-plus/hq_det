@@ -12,5 +12,5 @@ if __name__ == '__main__':
         batch_size=1,
         image_size=1024,
         gradient_update_interval=2,
-        lr_backbone_mult=0.1,
+        lr_backbone_mult=1,
     )

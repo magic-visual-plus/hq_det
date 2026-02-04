@@ -1,7 +1,9 @@
 from mmengine import MODELS, Config
 import torch.nn
 import torch.nn.functional as F
+from functools import partial
 from detectron2.config import LazyConfig, instantiate
+from detectron2.modeling.backbone.vit import get_vit_lr_decay_rate
 from ...common import PredictionResult
 from ..base import HQModel
 import numpy as np
@@ -206,6 +208,40 @@ class HQDINO_EVA(HQModel):
             return loss, info
         else:
             return torch.tensor(0, device=self.device), dict()
+
+    def get_param_dict(self, args):
+        vit_lr_decay = partial(get_vit_lr_decay_rate, lr_decay_rate=0.7, num_layers=12)
+        # Get the parameters of the model
+        params_default = []
+        params_backbone = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "backbone" in name:
+                params_backbone.append((name, param))
+            else:
+                params_default.append(param)
+        
+        backbone_param_groups = []
+        for name, param in params_backbone:
+            name_without_model = name[len("model."):]
+            # 计算当前骨干参数的衰减系数
+            decay_factor = vit_lr_decay(name_without_model)
+            # 骨干参数基础学习率 = 基础lr0 × 骨干倍率 × 分层衰减系数
+            param_lr = args.lr0 * args.lr_backbone_mult * decay_factor
+            # 每个骨干参数独立成组，分配专属学习率
+            backbone_param_groups.append({
+                'params': [param],
+                'lr': param_lr
+        })
+
+        return [
+            {
+                'params': params_default,
+                'lr': args.lr0
+            },
+            *backbone_param_groups
+        ]
 
 
     def save(self, path):
