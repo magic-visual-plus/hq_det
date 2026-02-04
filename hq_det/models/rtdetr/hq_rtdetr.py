@@ -32,7 +32,7 @@ class HQRTDETR(HQModel):
 
         print('=================================', kwargs)
         cfg = YAMLConfig(config_path)
-        cfg.yaml_cfg['num_classes'] = len(self.id2names)
+        cfg.yaml_cfg['num_classes'] = max(self.id2names.keys()) + 1
         cfg.yaml_cfg['remap_mscoco_category'] = False
         cfg.yaml_cfg['eval_spatial_size'] = [self.image_size, self.image_size]
         self.model = cfg.model
@@ -120,6 +120,7 @@ class HQRTDETR(HQModel):
         new_imgs = []
         for img in imgs:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.GaussianBlur(img, (3, 3), 0)
             img = VF.to_tensor(img)
             img, _ = torch_utils.pad_image(img, torch.zeros((0, 4)), (max_h, max_w))
             new_imgs.append(img)
