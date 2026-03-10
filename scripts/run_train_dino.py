@@ -15,11 +15,11 @@ from hq_det.tools import train_dino
 
 if __name__ == '__main__':
     train_dino.run(
-        data_path=sys.argv[1],
+        data_path='/root/autodl-tmp/dataset/gear_dataset_split_1106',
         output_path='output',
         num_epoches = 50,
         lr0=1e-4,
-        load_checkpoint=sys.argv[2],
+        load_checkpoint='/root/autodl-tmp/model/dino/dino-4scale_r50_8xb2-12e_coco_20221202_182705-55b2bba2.pth',
         # eval_class_names=[
         #     '划伤', '划痕', '压痕', '吊紧', '异物外漏', '折痕', '抛线', '拼接间隙', '烫伤', '爆针线', '破损', ' 碰伤', '线头', '脏污', '褶皱(贯穿)', '褶皱（轻度）', '褶皱（重度）', '重跳针', '褶皱(贯穿)',
         #     '脏污（彩色）', '脏污（颜料笔）', '褶皱(T型)'

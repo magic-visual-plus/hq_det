@@ -1,5 +1,6 @@
 import sys
 from hq_det.models.dino import hq_dino
+from hq_det.models import rtdetr
 from hq_det.trainer import HQTrainer, HQTrainerArguments
 from hq_det.dataset import CocoDetection
 import os
@@ -14,6 +15,7 @@ if __name__ == '__main__':
     output_path = sys.argv[3]
     
     model = hq_dino.HQDINO(model=sys.argv[1])
+    # model = rtdetr.HQRTDETR(model=sys.argv[1])
     model.eval()
     
     model.to("cuda:0")
