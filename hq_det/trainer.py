@@ -17,7 +17,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from .models.base import HQModel
 from .dataset import CocoDetection
 from typing import List, Tuple
-from detectron2.config import instantiate
 
 from .print_utils import (
     print_model_summary, 
