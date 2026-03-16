@@ -208,8 +208,8 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
     results = []
     
     imgs = [s[0] for s in splits]
-    results = model.predict(imgs, bgr=bgr)
-    
+    results = model.predict(imgs, bgr=bgr, confidence=thr)
+    # print(results)
     # merge results
     total_boxes = []
     total_cls = []

@@ -221,7 +221,7 @@ class HQGDINO(HQModel):
 
     def get_class_names(self):
         # Get the class names from the model
-        names = ['' for _ in range(len(self.id2names))]
+        names = ['' for _ in range(max(self.id2names.keys()) + 1)]
         for k, v in self.id2names.items():
             names[k] = v
 
@@ -292,9 +292,10 @@ class HQGDINO(HQModel):
             "inputs": [],
             "data_samples": [],
         }
-
+        boxes = torch.zeros((0, 4))
         for img in imgs:
-            img = torch_utils.pad_image_array(img, None, (self.image_size, self.image_size), pad_value=114)
+            img = cv2.GaussianBlur(img, (3, 3), 1.0)
+            img, _ = torch_utils.pad_image_array(img, boxes, (self.image_size, self.image_size), pad_value=114)
             img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
             batch_data['inputs'].append(img)
             data_sample = DetDataSample(metainfo={

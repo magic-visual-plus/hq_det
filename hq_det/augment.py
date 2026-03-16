@@ -7,6 +7,8 @@ import random
 from . import box_utils
 import imgaug.augmenters as iaa
 from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
+import os
+from . import split_utils
 
 
 def ensure_cv2(img):
@@ -609,6 +611,68 @@ class RandomShuffleChannel:
             img = img[:, :, channels]
 
             data['img'] = img
+        return data
+    pass
+
+
+class RandomPasteForground:
+    def __init__(self, foreground_path, p=0.5):
+        self.p = p
+        self.foreground_path = foreground_path
+        self.filenames = os.listdir(foreground_path)
+        pass
+
+    def __call__(self, data):
+        img = data["img"]
+        boxes = data["bboxes"]
+
+        if len(boxes) == 0:
+            # it is background
+            if random.random() <= self.p:
+                fg_filename = random.choice(self.filenames)
+                c = int(fg_filename[:-4].rsplit("_", 1)[-1])
+                fg_path = os.path.join(self.foreground_path, fg_filename)
+                fg_img = cv2.imread(fg_path)
+                w = fg_img.shape[1]
+                h = fg_img.shape[0]
+                if w < img.shape[1] and h < img.shape[0]:
+                    start_x = random.randint(0, img.shape[1] - w)
+                    start_y = random.randint(0, img.shape[0] - h)
+                    img[start_y:start_y + h, start_x:start_x + w] = fg_img
+                    boxes = np.array([[start_x, start_y, start_x + w, start_y + h]])
+                    data["img"] = img
+                    data["bboxes"] = boxes
+                    data["cls"] = np.array([c])
+                    pass
+                pass
+            pass
+
+        return data
+
+class RandomSplit:
+    def __init__(self, split_size, p=0.5):
+        self.split_size = split_size
+        self.p = p
+        pass
+
+    def __call__(self, data):
+        img = data['img']
+        bboxes = data['bboxes']
+        cls = data['cls']
+
+        if random.random() <= self.p:
+            splits = split_utils.split_image(
+                img, bboxes, cls, stride=self.split_size, shift=0, 
+                max_split=9999, add_global=False, box_area_thr=0.0)
+            
+            idx = random.randint(0, len(splits) - 1)
+
+            sub_img, sub_boxes, sub_cls, startx, starty = splits[idx]
+            data['img'] = sub_img
+            data['bboxes'] = sub_boxes
+            data['cls'] = sub_cls
+            pass
+
         return data
     pass
 

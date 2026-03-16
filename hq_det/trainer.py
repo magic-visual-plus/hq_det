@@ -58,82 +58,6 @@ def format_stats(info):
     return ','.join(parts)
 
 
-def extract_ground_truth(batch_data):
-    batch_size = len(batch_data['image_id'])
-    image_ids = batch_data['image_id']
-
-    gt_records = []
-    for i in range(batch_size):
-        image_id = image_ids[i]
-        mask = batch_data['batch_idx'] == i
-        if mask.sum() == 0:
-            gt_bboxes = np.zeros((0, 4))
-            gt_cls = np.zeros((0,))
-        else:
-            # add gt
-            gt_bboxes = batch_data['bboxes_xyxy'][mask].cpu().numpy()
-            gt_cls = batch_data['cls'][mask].cpu().numpy()
-
-        record =  PredictionResult(
-            image_id=image_id,
-            bboxes=gt_bboxes,
-            scores=np.ones(gt_bboxes.shape[0]),
-            cls=gt_cls,
-        )
-        gt_records.append(record)
-
-    return gt_records
-
-
-class DefaultAugmentation:
-    """default data augmentation class"""
-    
-    @staticmethod
-    def get_train_transforms(image_size, p=0.3):
-        """get train data augmentation"""
-        transforms = []
-        transforms.append(augment.ToNumpy())
-        
-        # 数据增强
-        transforms.append(augment.RandomCrop(p=p))
-        transforms.append(augment.RandomResize(p=p, max_size=image_size))
-        # prevent image is too big for speed
-        transforms.append(augment.Resize(max_size=image_size*2))
-
-        transforms.append(augment.RandomHorizontalFlip())
-        transforms.append(augment.RandomVerticalFlip())
-        transforms.append(augment.RandomGrayScale(p=p))
-        transforms.append(augment.RandomShuffleChannel(p=p))
-        transforms.append(augment.RandomRotate90(p=p))
-        transforms.append(augment.RandomAspectRatio(p=p))
-        transforms.append(augment.RandomRotate(p=p, degrees=30))
-        transforms.append(augment.RandomAffine(p=p))
-        transforms.append(augment.RandomPerspective(p=p))
-        transforms.append(augment.RandomNoise(p=p))
-        transforms.append(augment.RandomBrightness(p=p, alpha=0.1))
-        transforms.append(augment.RandomPixelValueShift(p=p))
-        transforms.append(augment.RandomShift(p=p, max_shift=0.02))
-        
-        # basic processing
-        transforms.append(augment.Resize(max_size=image_size))
-        transforms.append(augment.RandomBlur(p=1.0, ksize=[3,5,7,9]))
-        transforms.append(augment.FilterSmallBox())
-        transforms.append(augment.Format())
-        
-        return augment.Compose(transforms)
-    
-    @staticmethod
-    def get_val_transforms(image_size):
-        """get validation data augmentation"""
-        transforms = []
-        transforms.append(augment.ToNumpy())
-        transforms.append(augment.Resize(max_size=image_size))
-        transforms.append(augment.RandomBlur(p=1.0, ksize=[3]))
-        transforms.append(augment.FilterSmallBox())
-        transforms.append(augment.Format())
-        
-        return augment.Compose(transforms)
-
 
 class HQTrainer:
     def __init__(self, args: HQTrainerArguments):
@@ -185,11 +109,71 @@ class HQTrainer:
     def collate_fn(self, batch):
         raise NotImplementedError
 
+    def get_train_transforms(self, image_size, p=0.3):
+        """get train data augmentation"""
+        transforms = []
+        transforms.append(augment.ToNumpy())
+        
+        # random split
+        if self.args.augment_split_size > 0:
+            transforms.append(
+                augment.RandomSplit(
+                    self.args.augment_split_size,
+                    self.args.augment_split_proba))
+            pass
+        # random foreground paste
+        if len(self.args.augment_foreground_path) > 0:
+            transforms.append(
+                augment.RandomPasteForground(
+                    self.args.augment_foreground_path, 
+                    self.args.augment_foreground_proba))
+            pass
+
+        # 数据增强
+        transforms.append(augment.RandomCrop(p=p))
+        transforms.append(augment.RandomResize(p=p, max_size=image_size))
+        # prevent image is too big for speed
+        transforms.append(augment.Resize(max_size=image_size*2))
+
+        transforms.append(augment.RandomHorizontalFlip())
+        transforms.append(augment.RandomVerticalFlip())
+        transforms.append(augment.RandomGrayScale(p=p))
+        transforms.append(augment.RandomShuffleChannel(p=p))
+        transforms.append(augment.RandomRotate90(p=p))
+        transforms.append(augment.RandomAspectRatio(p=p))
+        transforms.append(augment.RandomRotate(p=p, degrees=30))
+        transforms.append(augment.RandomAffine(p=p))
+        transforms.append(augment.RandomPerspective(p=p))
+        transforms.append(augment.RandomNoise(p=p))
+        transforms.append(augment.RandomBrightness(p=p, alpha=0.1))
+        transforms.append(augment.RandomPixelValueShift(p=p))
+        transforms.append(augment.RandomShift(p=p, max_shift=0.02))
+        
+        # basic processing
+        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.RandomBlur(p=1.0, ksize=[3,5,7,9]))
+        transforms.append(augment.FilterSmallBox())
+        transforms.append(augment.Format())
+        
+        return augment.Compose(transforms)
+    
+
+    def get_val_transforms(self, image_size):
+        """get validation data augmentation"""
+        transforms = []
+        transforms.append(augment.ToNumpy())
+        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.RandomBlur(p=1.0, ksize=[3]))
+        transforms.append(augment.FilterSmallBox())
+        transforms.append(augment.Format())
+        
+        return augment.Compose(transforms)
+    
     def build_transforms(self, aug=True):
         if aug:
-            return DefaultAugmentation.get_train_transforms(self.args.image_size)
+            return self.get_train_transforms(self.args.image_size)
         else:
-            return DefaultAugmentation.get_val_transforms(self.args.image_size)
+            return self.get_val_transforms(self.args.image_size)
 
     def build_optimizer(self, model: HQModel) -> torch.optim.Optimizer:
         if isinstance(model, DDP):
@@ -341,7 +325,7 @@ class HQTrainer:
                 val_info = add_stats(val_info, info)
                 val_losses.append(loss.item())
                 all_preds.extend(preds)
-                all_gts.extend(extract_ground_truth(batch_data))
+                all_gts.extend(self.extract_ground_truth(batch_data))
                 
                 bar_val.set_postfix(**info)
                 pass
@@ -352,6 +336,34 @@ class HQTrainer:
 
         # distributed.barrier()
         return val_losses, val_info, stat
+
+    def extract_ground_truth(self, batch_data):
+        batch_size = len(batch_data['image_id'])
+        gt_boxes = batch_data['bboxes_xyxy']
+        gt_cls = batch_data['cls']
+        image_ids = batch_data['image_id']
+
+        gt_records = []
+        for i in range(batch_size):
+            image_id = image_ids[i]
+            mask = batch_data['batch_idx'] == i
+            if mask.sum() == 0:
+                gt_bboxes = np.zeros((0, 4))
+                gt_cls = np.zeros((0,))
+            else:
+                # add gt
+                gt_bboxes = batch_data['bboxes_xyxy'][mask].cpu().numpy()
+                gt_cls = batch_data['cls'][mask].cpu().numpy()
+
+            record =  PredictionResult(
+                image_id=image_id,
+                bboxes=gt_bboxes,
+                scores=np.ones(gt_bboxes.shape[0]),
+                cls=gt_cls,
+            )
+            gt_records.append(record)
+
+        return gt_records
 
     def _setup_datasets_and_transforms(self) -> Tuple[CocoDetection, CocoDetection]:
         trainsforms_train = self.build_transforms(aug=True)
@@ -695,11 +707,17 @@ class HQTrainer:
         os.makedirs(plots_path, exist_ok=True)
         curve_file = os.path.join(plots_path, 'pr_curve.csv')
         
-        precisions = stat['precisions']
-        recalls = stat['recalls']
 
-        with open(curve_file, 'w') as f:
-            f.write('px,all\n')
+        if "precisions" in stat and "recalls" in stat:
+            precisions = stat['precisions']
+            recalls = stat['recalls']
 
-            for i in range(len(precisions)):
-                f.write(f'{recalls[i]},{precisions[i]}\n')
+            with open(curve_file, 'w') as f:
+                f.write('px,all\n')
+
+                for i in range(len(precisions)):
+                    f.write(f'{recalls[i]},{precisions[i]}\n')
+                    pass
+                pass
+            pass
+        pass

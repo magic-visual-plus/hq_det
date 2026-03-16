@@ -68,7 +68,7 @@ class HQTrainerArguments(pydantic.BaseModel):
     
     # 输出相关
     checkpoint_path: str = 'output'    # 检查点路径
-    checkpoint_name: str = 'ckpt'    # 检查点名称
+    checkpoint_name: str = 'ckpt.pth'    # 检查点名称
     output_path: str = 'output'    # 输出路径
     checkpoint_interval: int = 10    # 检查点间隔
     
@@ -77,7 +77,14 @@ class HQTrainerArguments(pydantic.BaseModel):
     
     # 类别相关
     class_id2names: dict = None    # 类别ID到名称的映射
-    eval_class_names: List[str] = None    # 评估类别名称
+    eval_class_names: List[str] | None = None    # 评估类别名称
 
     find_unused_parameters: bool = False  # DDP 寻找未使用的参数
     sync_bn: bool = True  # 是否启用同步 BatchNorm（分布式训练）
+
+    # 增强相关
+    augment_split_size: int = -1
+    augment_split_proba: float = 0.5
+
+    augment_foreground_proba: float = 0.8
+    augment_foreground_path: str = ""

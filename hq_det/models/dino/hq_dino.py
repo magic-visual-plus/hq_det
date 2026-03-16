@@ -18,20 +18,24 @@ class HQDINO(HQModel):
             data = torch.load(kwargs['model'], map_location='cpu')
             class_names = data['meta']['dataset_meta']['CLASSES']
             self.id2names = {i: name for i, name in enumerate(class_names)}
+            self.image_size = kwargs.get('image_size', data.get('image_size', 1536))
         else:
             self.id2names = class_id2names
+            self.image_size = kwargs.get('image_size', 1536)
+            pass
+        self.num_classes = max(self.id2names.keys()) + 1
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
         dino_config_path = os.path.join(current_dir, 'configs', 'dino_4scale_r50_8xb2_12e_coco.py')
         dino_config = Config.fromfile(dino_config_path)
-        dino_config.model['bbox_head']['num_classes'] = len(self.id2names)
+        dino_config.model['bbox_head']['num_classes'] = self.num_classes
         self.model = MODELS.build(dino_config.model)
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
 
     def get_class_names(self):
         # Get the class names from the model
-        names = ['' for _ in range(len(self.id2names))]
+        names = ['' for _ in range(self.num_classes)]
         for k, v in self.id2names.items():
             names[k] = v
 
@@ -105,7 +109,7 @@ class HQDINO(HQModel):
         }
 
         for img in imgs:
-            img = cv2.GaussianBlur(img, (3, 3), 0)
+            img = cv2.GaussianBlur(img, (3, 3), 1.0)
             img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
             batch_data['inputs'].append(img)
             data_sample = DetDataSample(metainfo={
@@ -130,6 +134,10 @@ class HQDINO(HQModel):
             pass
 
         img_scales = np.ones((len(imgs),))
+        if max_size == -1:
+            max_size = self.image_size
+            pass
+        
         if max_size > 0:
             for i in range(len(imgs)):
                 max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
