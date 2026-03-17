@@ -146,6 +146,13 @@ def iou_xyxy(box1, box2):
     return iou
 
 
+def any_unhanddled_boxes(boxes, im_width, im_height):
+    if ((boxes[:, 3] - boxes[:, 1]) < 1).any():
+        return True
+    if ((boxes[:, 2] - boxes[:, 0]) < 1).any():
+        return True
+    return False
+
 
 def filter_invalid_boxes(boxes, cls, im_width, im_height):
     """
@@ -153,14 +160,18 @@ def filter_invalid_boxes(boxes, cls, im_width, im_height):
     """
 
     boxes_ = boxes.copy()
-    mask = (boxes_[:, 0] < im_width) & (boxes_[:, 1] < im_height) & \
-              (boxes_[:, 2] > 0) & (boxes_[:, 3] > 0) & \
-              (boxes_[:, 2] > boxes_[:, 0]) & (boxes_[:, 3] > boxes_[:, 1])
-    boxes_ = boxes_[mask]
     boxes_[:, 0] = np.clip(boxes_[:, 0], 0, im_width)
     boxes_[:, 1] = np.clip(boxes_[:, 1], 0, im_height)
     boxes_[:, 2] = np.clip(boxes_[:, 2], 0, im_width)
     boxes_[:, 3] = np.clip(boxes_[:, 3], 0, im_height)
+
+    mask = (boxes_[:, 0] < im_width) & (boxes_[:, 1] < im_height) & \
+           (boxes_[:, 2] > 0) & (boxes_[:, 3] > 0) & \
+           (boxes_[:, 2] > boxes_[:, 0]) & (boxes_[:, 3] > boxes_[:, 1]) & \
+           ((boxes_[:, 2] - boxes_[:, 0]) >= 1) & \
+           ((boxes_[:, 3] - boxes_[:, 1]) >= 1)
+    boxes_ = boxes_[mask]
+    
     cls_ = cls[mask]
 
     return boxes_, cls_

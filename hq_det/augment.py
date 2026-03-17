@@ -505,6 +505,10 @@ class RandomResize:
             img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
             bboxes_ = bboxes * scale
 
+            if box_utils.any_unhanddled_boxes(bboxes_, img.shape[1], img.shape[0]):
+                # do NOT resize if any box becomes invalid
+                return data
+            
             bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
             
             data['img'] = img
@@ -524,6 +528,7 @@ class RandomAspectRatio:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             h, w = img.shape[:2]
             new_h = int(h * np.random.uniform(0.5, 1.5))
@@ -533,8 +538,10 @@ class RandomAspectRatio:
             y_ratio = new_h / h
             bboxes_ = bboxes * np.array([x_ratio, y_ratio, x_ratio, y_ratio])
             
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
             data['img'] = img
             data['bboxes'] = bboxes_
+            data['cls'] = cls_
             pass
 
         return data
@@ -746,8 +753,12 @@ class Compose:
         for t in self.transforms:
             data = t(data)
             if not isinstance(t, ToTensor) and not isinstance(t, Normalize):
-                if (data['bboxes'][:, 0] > data['img'].shape[1]).any() or (data['bboxes'][:, 3] <= data['bboxes'][:, 1]).any() or (data['bboxes'][:, 1] < 0).any():
-                    raise ValueError("Box coordinates exceed image dimensions.")
+                if (data['bboxes'][:, 0] > data['img'].shape[1]).any() or \
+                    (data['bboxes'][:, 3] <= data['bboxes'][:, 1]).any() or \
+                    (data['bboxes'][:, 1] < 0).any() or \
+                    ((data['bboxes'][:, 3] - data['bboxes'][:, 1]) < 1).any():
+                    raise ValueError(
+                        f"Box coordinates exceed image dimensions, transform: {type(t)}, img shape: {data['img'].shape}, bboxes: {data['bboxes']}")
                 pass
             pass
         return data
