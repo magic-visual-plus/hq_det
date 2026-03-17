@@ -762,7 +762,8 @@ class Compose:
                 if (data['bboxes'][:, 0] > data['img'].shape[1]).any() or \
                     (data['bboxes'][:, 3] <= data['bboxes'][:, 1]).any() or \
                     (data['bboxes'][:, 1] < 0).any() or \
-                    ((data['bboxes'][:, 3] - data['bboxes'][:, 1]) < 1).any():
+                    ((data['bboxes'][:, 3] - data['bboxes'][:, 1]) < 1).any() or \
+                    ((data['bboxes'][:, 2] - data['bboxes'][:, 0]) < 1).any():
                     raise ValueError(
                         f"Box coordinates exceed image dimensions, transform: {type(t)}, img shape: {data['img'].shape}, bboxes: {data['bboxes']}")
                 pass
