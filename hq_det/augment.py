@@ -167,6 +167,7 @@ class RandomRotate90:
         if random.random() <= self.p:
             img = data['img']
             bboxes = data['bboxes']
+            cls = data['cls']
 
             bbs = BoundingBoxesOnImage([
                 BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3])
@@ -181,8 +182,11 @@ class RandomRotate90:
                 bboxes_[i, 3] = box.y2
                 pass
 
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, image_aug.shape[1], image_aug.shape[0])
+
             data['img'] = image_aug
             data['bboxes'] = bboxes_
+            data['cls'] = cls_
             pass
         return data
     pass
@@ -215,7 +219,7 @@ class RandomRotate:
                 bboxes_[i, 3] = box.y2
                 pass
 
-            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, image_aug.shape[1], image_aug.shape[0])
             data['img'] = image_aug
             data['bboxes'] = bboxes_
             data['cls'] = cls_
@@ -248,7 +252,7 @@ class RandomAffine:
                 bboxes_[i, 3] = box.y2
                 pass
 
-            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, image_aug.shape[1], image_aug.shape[0])
             
             data['img'] = image_aug
             data['bboxes'] = bboxes_
@@ -298,6 +302,8 @@ class RandomCrop:
             bboxes_[:, 2] = np.clip(bboxes_[:, 2] - x1, 0, img.shape[1])
             bboxes_[:, 3] = np.clip(bboxes_[:, 3] - y1, 0, img.shape[0])
             bboxes = bboxes_
+
+            bboxes, cls = box_utils.filter_invalid_boxes(bboxes, cls, img.shape[1], img.shape[0])
             pass
 
         data['img'] = img
@@ -574,7 +580,7 @@ class RandomPerspective:
                 bboxes_[i, 3] = box.y2
                 pass
 
-            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, img.shape[1], img.shape[0])
+            bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes_, cls, image_aug.shape[1], image_aug.shape[0])
             
             data['bboxes'] = bboxes_
             data['cls'] = cls_
