@@ -681,6 +681,7 @@ class RandomSplit:
             idx = random.randint(0, len(splits) - 1)
 
             sub_img, sub_boxes, sub_cls, startx, starty = splits[idx]
+            sub_boxes, sub_cls = box_utils.filter_invalid_boxes(sub_boxes, sub_cls, sub_img.shape[1], sub_img.shape[0])
             data['img'] = sub_img
             data['bboxes'] = sub_boxes
             data['cls'] = sub_cls
