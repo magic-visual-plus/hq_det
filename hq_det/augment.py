@@ -694,6 +694,13 @@ class RandomSplit:
 class ToNumpy:
     def __call__(self, data):
         data['img'] = ensure_cv2(data['img'])
+        bboxes = data['bboxes']
+        cls = data['cls']
+
+        bboxes_, cls_ = box_utils.filter_invalid_boxes(bboxes, cls, data['img'].shape[1], data['img'].shape[0])
+        data['bboxes'] = bboxes_
+        data['cls'] = cls_
+
         return data
     pass
 
