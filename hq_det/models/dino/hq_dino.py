@@ -208,7 +208,8 @@ class HQDINO(HQModel):
                     'dataset_meta': {
                         'CLASSES': self.get_class_names(),
                     },
-                }
+                },
+                'image_size': self.image_size,
             }, path)
         pass
 
