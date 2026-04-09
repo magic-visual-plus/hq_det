@@ -21,6 +21,7 @@ dependencies = [
     "loguru",
     "supervision",
     "peft<=0.15.2",
+    "fairscale",
 ]
 requires-python = ">=3.6"
 
