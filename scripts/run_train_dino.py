@@ -29,6 +29,7 @@ if __name__ == '__main__':
         gradient_update_interval=2,
         lr_backbone_mult=1.0,
         devices=[0],
+        # dino_config_name='dino-5scale_swin-l_8xb2-12e_coco.py',
         augment_split_size=2560,
         augment_split_proba=0.5,
         augment_foreground_path=sys.argv[3],
