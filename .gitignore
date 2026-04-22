@@ -1,9 +1,31 @@
+# Python
 __pycache__
+*.pyc
+*.pyo
 *.egg-info
+.ipynb_checkpoints
+
+# Build / compiled artifacts
+*.so
+*.o
+*.d
+**/csrc/build/
+**/csrc/.build.lock
+
+# Project outputs
 */runs/detect/*
 */mm_runs/*
 scripts/checkpoints/*
 output
 runs
 model_files
-.ipynb_checkpoints
+
+# Training logs / experiments
+*.log
+train_*.log
+yfmb*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -81,7 +81,11 @@ def run(
         gradient_update_interval=1, devices=[0], lr_backbone_mult=0.1, num_data_workers=12, checkpoint_name='ckpt.pth',
         augment_split_size=-1, augment_split_proba=0.5, augment_foreground_path="",
         augment_foreground_proba=0.8,
+        dino_config_name=None,
     ):
+    model_argument = {"model": load_checkpoint}
+    if dino_config_name:
+        model_argument["config_name"] = dino_config_name
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
@@ -97,9 +101,7 @@ def run(
             output_path=output_path,
             checkpoint_interval=-1,
             image_size=image_size,
-            model_argument={
-                "model": load_checkpoint,
-            },
+            model_argument=model_argument,
             eval_class_names=eval_class_names,
             gradient_update_interval=gradient_update_interval,
             devices=devices,
