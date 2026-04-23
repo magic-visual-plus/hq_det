@@ -1,0 +1,2 @@
+mAP,precision,recall,f1_score,fnr,confidence,train/box_loss,train/cls_loss,train/giou_loss,val/box_loss,val/cls_loss,val/giou_loss
+1.1760174042095196e-05,0.000199860097931448,0.01,0.00039184950291000677,0.99,0.01642649993300438

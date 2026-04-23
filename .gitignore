@@ -1,0 +1,9 @@
+__pycache__
+*.egg-info
+*/runs/detect/*
+*/mm_runs/*
+scripts/checkpoints/*
+output
+runs
+model_files
+.ipynb_checkpoints
