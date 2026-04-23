@@ -90,16 +90,29 @@ def _ensure_compiled() -> None:
         _compile_extension()
 
 
-_ensure_compiled()
+ext_module = None
+CUDA_AVAILABLE = False
+_import_error: Optional[str] = None
 
-try:
+
+def _load_ext() -> None:
+    """Lazily compile (if needed) and import the CUDA extension. Called only
+    when AsymmetricFocalLoss is actually instantiated, so configs that don't
+    use it never pay the build/check cost."""
+    global ext_module, CUDA_AVAILABLE, _import_error
+    if ext_module is not None:
+        return
+    _ensure_compiled()
     if _CSRC_DIR not in sys.path:
         sys.path.insert(0, _CSRC_DIR)
-    import asymmetric_focal_loss_cuda as ext_module
-    CUDA_AVAILABLE = True
-except ImportError as e:
-    CUDA_AVAILABLE = False
-    _import_error = str(e)
+    try:
+        import asymmetric_focal_loss_cuda as _ext
+        ext_module = _ext
+        CUDA_AVAILABLE = True
+    except ImportError as e:
+        CUDA_AVAILABLE = False
+        _import_error = str(e)
+        raise
 
 
 # -----------------------------------------------------------------------------
@@ -227,6 +240,7 @@ class AsymmetricFocalLoss(nn.Module):
         self.reduction = reduction
         self.loss_weight = loss_weight
         self.activated = activated
+        _load_ext()
 
     def forward(self,
                 pred,
