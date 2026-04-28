@@ -10,7 +10,7 @@ from ... import torch_utils
 import torchvision.transforms.functional as VF
 from ..base import HQModel
 
-sys.path.insert(0, '/root/hq_det-main/hq_det/models/deim')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from engine.core import YAMLConfig
 
@@ -84,7 +84,7 @@ class HQDEIM(HQModel):
                     config_dir = 'deim_dfine'
 
             config_path = os.path.join(
-                os.path.dirname(current_module_path), 'DEIM',
+                os.path.dirname(current_module_path),
                 'configs', config_dir, f'{model_name}.yml')
 
         # Load config and modify for custom dataset
@@ -139,6 +139,10 @@ class HQDEIM(HQModel):
             print(msg)
 
         self.model.load_state_dict(new_state_dict, strict=False)
+
+    def extract_target(self, batch_data):
+        return batch_data['targets']
+
     def forward(self, batch_data):
         targets = batch_data.get('targets')
         if targets is not None and not self.training:
@@ -233,21 +237,16 @@ class HQDEIM(HQModel):
             pred.bboxes = pred.bboxes / img_scales[i]
         return preds
     def compute_loss(self, batch_data, forward_result):
-        # 验证模式或缺少 aux_outputs 时返回零损失
-        if not self.training or 'aux_outputs' not in forward_result:
-            total_loss = torch.tensor(0.0, device=next(self.parameters()).device)
-            return total_loss, {}
-        
         loss_dict = self.criterion(forward_result, batch_data['targets'])
-        
+
         if not hasattr(self, '_loss_keys_printed'):
             print(f"Available loss keys: {list(loss_dict.keys())}")
             self._loss_keys_printed = True
-    
+
         def get_value(key):
             v = loss_dict.get(key)
             return v.item() if isinstance(v, torch.Tensor) else (v if v is not None else 0.0)
-        
+
         info = {
             'box': get_value('loss_bbox'),
             'giou': get_value('loss_giou'),
@@ -256,9 +255,8 @@ class HQDEIM(HQModel):
         for key, name in [('loss_fgl', 'fgl'), ('loss_ddf', 'ddf'), ('loss_mal', 'mal')]:
             if key in loss_dict:
                 info[name] = get_value(key)
-        
-        total_loss = sum(loss_dict.values())
-        return total_loss, info
+
+        return sum(loss_dict.values()), info
 
 
     def save(self, path):
