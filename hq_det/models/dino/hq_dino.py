@@ -33,10 +33,33 @@ class HQDINO(HQModel):
         else:
             dino_config_path = os.path.join(current_dir, 'configs', 'dino_4scale_r50_8xb2_12e_coco.py')
         dino_config = Config.fromfile(dino_config_path)
+        self._apply_loss_overrides(dino_config, kwargs)
         dino_config.model['bbox_head']['num_classes'] = self.num_classes
         self.model = MODELS.build(dino_config.model)
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
+        if int(os.environ.get('LOCAL_RANK', 0)) == 0:
+            sep = '─' * 60
+            print(f"\n{sep}\n[HQDINO config] {dino_config_path}\n{sep}\n{dino_config.pretty_text}\n{sep}\n")
+
+    @staticmethod
+    def _apply_loss_overrides(dino_config, params: dict):
+        loss_cfg = dino_config.model.get('bbox_head', {}).get('loss_cls', {})
+        loss_type_raw = loss_cfg.get('type')
+        loss_type = (loss_type_raw.__name__ if hasattr(loss_type_raw, '__name__') else str(loss_type_raw)).lower()
+
+        if 'focalloss' in loss_type and 'asymmetric' not in loss_type:
+            if params.get('focal_loss_alpha') is not None:
+                loss_cfg['alpha'] = params['focal_loss_alpha']
+            if params.get('focal_loss_gamma') is not None:
+                loss_cfg['gamma'] = params['focal_loss_gamma']
+        elif 'asymmetricfocalloss' in loss_type:
+            if params.get('focal_loss_alpha') is not None:
+                loss_cfg['alpha'] = params['focal_loss_alpha']
+            if params.get('focal_loss_gamma_pos') is not None:
+                loss_cfg['gamma_pos'] = params['focal_loss_gamma_pos']
+            if params.get('focal_loss_gamma_neg') is not None:
+                loss_cfg['gamma_neg'] = params['focal_loss_gamma_neg']
 
     def get_class_names(self):
         # Get the class names from the model
