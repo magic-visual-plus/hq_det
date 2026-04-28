@@ -82,10 +82,15 @@ def run(
         augment_split_size=-1, augment_split_proba=0.5, augment_foreground_path="",
         augment_foreground_proba=0.8,
         dino_config_name=None,
+        focal_loss_alpha=None, focal_loss_gamma=None,
+        focal_loss_gamma_pos=None, focal_loss_gamma_neg=None,
     ):
     model_argument = {"model": load_checkpoint}
     if dino_config_name:
         model_argument["config_name"] = dino_config_name
+    for key in ('focal_loss_alpha', 'focal_loss_gamma', 'focal_loss_gamma_pos', 'focal_loss_gamma_neg'):
+        if locals()[key] is not None:
+            model_argument[key] = locals()[key]
     trainer = MyTrainer(
         HQTrainerArguments(
             data_path=data_path,
