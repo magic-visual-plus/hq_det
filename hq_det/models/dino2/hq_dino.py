@@ -9,42 +9,50 @@ import cv2
 from typing import List
 from ... import torch_utils
 import os
+import copy
 
 
 class HQDINO(HQModel):
     def __init__(self, class_id2names=None, **kwargs):
         super(HQDINO, self).__init__(class_id2names, **kwargs)
         if class_id2names is None:
-            data = torch.load(kwargs['model'], map_location='cpu')
+            data = torch.load(kwargs['model'], map_location='cpu', weights_only=False)
             class_names = data['meta']['dataset_meta']['CLASSES']
             self.id2names = {i: name for i, name in enumerate(class_names)}
             self.image_size = kwargs.get('image_size', data.get('image_size', 1536))
+            self.model_config = data.get('model_config', None)
         else:
             self.id2names = class_id2names
             self.image_size = kwargs.get('image_size', 1536)
+            self.model_config = kwargs.get('model_config', None)
             pass
+
         self.num_classes = max(self.id2names.keys()) + 1
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        dino_config_path = None
         if kwargs.get('config_path'):
             dino_config_path = kwargs['config_path']
         elif kwargs.get('config_name'):
             dino_config_path = os.path.join(current_dir, 'configs', kwargs['config_name'])
-        else:
+        elif self.model_config is None:
             dino_config_path = os.path.join(current_dir, 'configs', 'dino_4scale_r50_8xb2_12e_coco.py')
-        dino_config = Config.fromfile(dino_config_path)
-        self._apply_loss_overrides(dino_config, kwargs)
-        dino_config.model['bbox_head']['num_classes'] = self.num_classes
-        self.model = MODELS.build(dino_config.model)
+            pass
+        if dino_config_path is not None:
+            dino_config = Config.fromfile(dino_config_path)
+            self.model_config = dino_config.model
+            pass
+
+        self._apply_loss_overrides(self.model_config, kwargs)
+        self.model_config['bbox_head']['num_classes'] = self.num_classes
+        self.model = MODELS.build(copy.deepcopy(self.model_config))
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
-        if int(os.environ.get('LOCAL_RANK', 0)) == 0:
-            sep = '─' * 60
-            print(f"\n{sep}\n[HQDINO config] {dino_config_path}\n{sep}\n{dino_config.pretty_text}\n{sep}\n")
+        pass
 
     @staticmethod
-    def _apply_loss_overrides(dino_config, params: dict):
-        loss_cfg = dino_config.model.get('bbox_head', {}).get('loss_cls', {})
+    def _apply_loss_overrides(model_config, params: dict):
+        loss_cfg = model_config.get('bbox_head', {}).get('loss_cls', {})
         loss_type_raw = loss_cfg.get('type')
         loss_type = (loss_type_raw.__name__ if hasattr(loss_type_raw, '__name__') else str(loss_type_raw)).lower()
 
@@ -236,6 +244,7 @@ class HQDINO(HQModel):
                     },
                 },
                 'image_size': self.image_size,
+                'model_config': self.model_config,
             }, path)
         pass
 

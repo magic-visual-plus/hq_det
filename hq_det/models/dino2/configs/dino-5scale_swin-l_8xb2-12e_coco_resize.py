@@ -1,6 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from mmcv.transforms import RandomChoice, RandomChoiceResize
-from mmcv.transforms.loading import LoadImageFromFile
+
 from mmengine.config import read_base
 from mmengine.optim.optimizer.optimizer_wrapper import OptimWrapper
 from mmengine.optim.scheduler.lr_scheduler import MultiStepLR
@@ -17,7 +16,7 @@ from mmdet.models.losses.iou_loss import GIoULoss
 from mmdet.models.losses.smooth_l1_loss import L1Loss
 from mmdet.models.task_modules import (BBoxL1Cost, FocalLossCost,
                                        HungarianAssigner, IoUCost)
-
+from hq_det.models.dino2.layers import ResizeSwinTransformer
 
 pretrained = 'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_large_patch4_window12_384_22k.pth'  # noqa
 num_levels = 5
@@ -35,7 +34,7 @@ model = dict(
         bgr_to_rgb=True,
         pad_size_divisor=1),
     backbone=dict(
-        type=SwinTransformer,
+        type=ResizeSwinTransformer,
         pretrain_img_size=384,
         embed_dims=192,
         depths=[2, 2, 18, 2],
