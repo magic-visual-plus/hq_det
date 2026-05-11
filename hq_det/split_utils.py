@@ -205,11 +205,10 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
         pass
 
     splits = split_image(img, boxes, cls, stride, shift, max_split, add_global=add_global, box_area_thr=box_area_thr)
-    results = []
-    
+    results = []  
     imgs = [s[0] for s in splits]
     results = model.predict(imgs, bgr=bgr, confidence=thr)
-    # print(results)
+
     # merge results
     total_boxes = []
     total_cls = []
@@ -267,8 +266,17 @@ def predict_split(model: base.HQModel, img, thr, stride, shift, max_split, bgr=F
             pass
         pass
 
+    total_boxes = np.concatenate(total_boxes, axis=0)
+    if len(splits) == 1:
+        # if only one splits, we should resize box to the original imgs
+        oimg = imgs[0]
+        rate = max(img.shape[0], img.shape[1]) / max(oimg.shape[0], oimg.shape[1])
+        total_boxes *= rate
+        pass
+
+
     pred = common.PredictionResult()
-    pred.bboxes = np.concatenate(total_boxes, axis=0)
+    pred.bboxes = total_boxes
     pred.cls = np.concatenate(total_cls, axis=0)
     pred.scores = np.concatenate(total_scores, axis=0)
 
