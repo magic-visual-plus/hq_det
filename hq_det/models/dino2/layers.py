@@ -47,10 +47,12 @@ class ResizeSwinTransformer(SwinTransformer):
 
 
 class ResizeResNet(ResNet):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, image_size, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        assert image_size % 1024 == 0
         # 在 backbone 之前添加一个可学习的 Resize 模块
-        self.learnable_resize = LearnableResize(scale_factor=4)
+        self.learnable_resize = LearnableResize(scale_factor=image_size // 1024)
+        print(image_size // 1024, "x Resize applied in ResizeResNet")
 
     def forward(self, x):
         # 先通过可学习的 Resize 模块调整输入特征图的尺寸
