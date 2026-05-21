@@ -1,9 +1,12 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-
+from mmcv.transforms import RandomChoice, RandomChoiceResize
+from mmcv.transforms.loading import LoadImageFromFile
 from mmengine.config import read_base
+from mmengine.model.weight_init import PretrainedInit
 from mmengine.optim.optimizer.optimizer_wrapper import OptimWrapper
 from mmengine.optim.scheduler.lr_scheduler import MultiStepLR
 from mmengine.runner.loops import EpochBasedTrainLoop, TestLoop, ValLoop
+from torch.nn.modules.batchnorm import BatchNorm2d
 from torch.nn.modules.normalization import GroupNorm
 from torch.optim.adamw import AdamW
 
@@ -18,88 +21,80 @@ from mmdet.models.task_modules import (BBoxL1Cost, FocalLossCost,
                                        HungarianAssigner, IoUCost)
 from hq_det.models.dino2.layers import ResizeSwinTransformer
 
-pretrained = 'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_large_patch4_window12_384_22k.pth'  # noqa
-num_levels = 5
 
 model = dict(
     type=DINO,
-    num_queries=900,  # num_matching_queries
+    num_queries=900,
     with_box_refine=True,
     as_two_stage=True,
-    num_feature_levels=num_levels,
     data_preprocessor=dict(
         type=DetDataPreprocessor,
         mean=[123.675, 116.28, 103.53],
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True,
-        pad_size_divisor=1),
+        pad_mask=False,
+    ),
     backbone=dict(
         type=ResizeSwinTransformer,
-        image_size=2048,
-        pretrain_img_size=384,
-        embed_dims=192,
-        depths=[2, 2, 18, 2],
-        num_heads=[6, 12, 24, 48],
-        window_size=12,
+        image_size=4096,
+        embed_dims=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=7,
         mlp_ratio=4,
         qkv_bias=True,
         qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
+        drop_rate=0.,
+        attn_drop_rate=0.,
         drop_path_rate=0.2,
         patch_norm=True,
-        out_indices=(0, 1, 2, 3),
+        out_indices=(1, 2, 3),
         with_cp=True,
         convert_weights=True,
-        init_cfg=dict(type='Pretrained', checkpoint=pretrained)),
+        frozen_stages=-1,
+    ),
     neck=dict(
         type=ChannelMapper,
-        in_channels=[192, 384, 768, 1536],
+        in_channels=[192, 384, 768],
         kernel_size=1,
         out_channels=256,
         act_cfg=None,
-        norm_cfg=dict(type=GroupNorm, num_groups=32),
-        num_outs=num_levels),
+        bias=True,
+        norm_cfg=dict(type='GN', num_groups=32),
+        num_outs=4),
     encoder=dict(
         num_layers=6,
         num_cp=6,
+        # visual layer config
         layer_cfg=dict(
-            self_attn_cfg=dict(embed_dims=256, num_levels=num_levels,
-                               dropout=0.0),  # 0.1 for DeformDETR
+            self_attn_cfg=dict(embed_dims=256, num_levels=4, dropout=0.0),
             ffn_cfg=dict(
-                embed_dims=256,
-                feedforward_channels=2048,  # 1024 for DeformDETR
-                ffn_drop=0.0))),  # 0.1 for DeformDETR
+                embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+    ),
     decoder=dict(
         num_layers=6,
         return_intermediate=True,
         layer_cfg=dict(
-            self_attn_cfg=dict(embed_dims=256, num_heads=8,
-                               dropout=0.0),  # 0.1 for DeformDETR
-            cross_attn_cfg=dict(embed_dims=256, num_levels=num_levels,
-                                dropout=0.0),  # 0.1 for DeformDETR
+            # query self attention layer
+            self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+            # cross attention layer query to image
+            cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
             ffn_cfg=dict(
-                embed_dims=256,
-                feedforward_channels=2048,  # 1024 for DeformDETR
-                ffn_drop=0.0)),  # 0.1 for DeformDETR
+                embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
         post_norm_cfg=None),
     positional_encoding=dict(
-        num_feats=128,
-        normalize=True,
-        offset=0.0,  # -0.5 for DeformDETR
-        temperature=20),  # 10000 for DeformDETR
+        num_feats=128, normalize=True, offset=0.0, temperature=20),
     bbox_head=dict(
         type=DINOHead,
         num_classes=80,
         sync_cls_avg_factor=True,
         loss_cls=dict(
-            type=FocalLoss,
+            type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),  # 2.0 in DeformDETR
-        loss_bbox=dict(type=L1Loss, loss_weight=5.0),
-        loss_iou=dict(type=GIoULoss, loss_weight=2.0)),
+        loss_bbox=dict(type='L1Loss', loss_weight=5.0)),
     dn_cfg=dict(  # TODO: Move to model.train_cfg ?
         label_noise_scale=0.5,
         box_noise_scale=1.0,  # 0.4 for DN-DETR
@@ -110,11 +105,11 @@ model = dict(
         assigner=dict(
             type=HungarianAssigner,
             match_costs=[
-                dict(type=FocalLossCost, weight=2.0),
-                dict(type=BBoxL1Cost, weight=5.0, box_format='xywh'),
-                dict(type=IoUCost, iou_mode='giou', weight=2.0)
+                dict(type='FocalLossCost', weight=2.0),
+                dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
+                dict(type='IoUCost', iou_mode='giou', weight=2.0)
             ])),
-    test_cfg=dict(max_per_img=300))  # 100 for DeformDETR
+    test_cfg=dict(max_per_img=300))
 
 
 # optimizer

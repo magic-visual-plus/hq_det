@@ -10,6 +10,7 @@ from typing import List
 from ... import torch_utils
 import os
 import copy
+from hq_det.models.dino2.layers import ResizeResNet, ResizeSwinTransformer
 
 
 class HQDINO(HQModel):
@@ -19,11 +20,11 @@ class HQDINO(HQModel):
             data = torch.load(kwargs['model'], map_location='cpu', weights_only=False)
             class_names = data['meta']['dataset_meta']['CLASSES']
             self.id2names = {i: name for i, name in enumerate(class_names)}
-            self.image_size = kwargs.get('image_size', data.get('image_size', 1536))
+            self.image_size = kwargs.get('image_size', data.get('image_size', 2048))
             self.model_config = data.get('model_config', None)
         else:
             self.id2names = class_id2names
-            self.image_size = kwargs.get('image_size', 1536)
+            self.image_size = kwargs.get('image_size', 2048)
             self.model_config = kwargs.get('model_config', None)
             pass
 
@@ -45,6 +46,12 @@ class HQDINO(HQModel):
 
         self._apply_loss_overrides(self.model_config, kwargs)
         self.model_config['bbox_head']['num_classes'] = self.num_classes
+        print(f"backbone image size: {self.image_size}")
+        print(self.model_config['backbone'].type)
+        if self.model_config['backbone'].type is ResizeResNet or \
+            self.model_config['backbone'].type is ResizeSwinTransformer:
+            self.model_config['backbone']['image_size'] = self.image_size
+            pass
         self.model = MODELS.build(copy.deepcopy(self.model_config))
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
@@ -79,9 +86,13 @@ class HQDINO(HQModel):
 
     def load_model(self, path):
         data = torch.load(path, map_location='cpu', weights_only=False)
-        new_state_dict = {k: v for k, v in data['state_dict'].items() if data['state_dict'][k].shape == self.model.state_dict()[k].shape}
+        print(data['state_dict']["bbox_head.reg_branches.0.2.weight"].shape)
+        print(self.model.state_dict()["bbox_head.reg_branches.0.2.weight"].shape)
+        new_state_dict = {k: v for k, v in data['state_dict'].items() if k in self.model.state_dict() and data['state_dict'][k].shape == self.model.state_dict()[k].shape}
         print(len(new_state_dict), len(data['state_dict']))
-        self.model.load_state_dict(new_state_dict, strict=False)
+        missing_keys, unexpected_keys = self.model.load_state_dict(new_state_dict, strict=False)
+        print(f"Missing keys: {missing_keys}")
+        print(f"Unexpected keys: {unexpected_keys}")
 
     def forward(self, batch_data):
         batch_data.update(self.model.data_preprocessor(batch_data, self.training))

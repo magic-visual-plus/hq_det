@@ -15,7 +15,7 @@ if __name__ == '__main__':
     train_dino.run(
         data_path=sys.argv[1],
         output_path='output',
-        num_epoches = 100,
+        num_epoches = 50,
         lr0=1e-4,
         load_checkpoint=sys.argv[2],
         # eval_class_names=[
@@ -23,15 +23,16 @@ if __name__ == '__main__':
         #     '脏污（彩色）', '脏污（颜料笔）', '褶皱(T型)'
         # ],
         eval_class_names=[],
-        batch_size=3,
-        image_size=1536,
+        batch_size=8,
+        image_size=2048,
         gradient_update_interval=1,
-        lr_backbone_mult=1.0,
-        dino_config_name=None, # swinLarge: dino-5scale_swin-l_8xb2-12e_coco.py, default: dino_4scale_r50_8xb2_12e_coco.py
+        lr_backbone_mult=0.1,
+        # dino_config_name=None, # swinLarge: dino-5scale_swin-l_8xb2-12e_coco.py, default: dino_4scale_r50_8xb2_12e_coco.py
+        dino_config_name='dino_4scale_swin-t_8xb2_12e_resize.py',
         # augment_split_size=2560,
         # augment_split_proba=0.5,
         # augment_foreground_path=sys.argv[3],
         # augment_foreground_proba=0.8,
-        focal_loss_alpha=0.75,
+        # focal_loss_alpha=0.75,
         devices=list(range(torch.cuda.device_count()))
     )

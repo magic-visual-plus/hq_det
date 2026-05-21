@@ -85,7 +85,7 @@ def run(
         focal_loss_alpha=None, focal_loss_gamma=None,
         focal_loss_gamma_pos=None, focal_loss_gamma_neg=None,
     ):
-    model_argument = {"model": load_checkpoint}
+    model_argument = {"model": load_checkpoint, "image_size": image_size}
     if dino_config_name:
         model_argument["config_name"] = dino_config_name
     for key in ('focal_loss_alpha', 'focal_loss_gamma', 'focal_loss_gamma_pos', 'focal_loss_gamma_neg'):

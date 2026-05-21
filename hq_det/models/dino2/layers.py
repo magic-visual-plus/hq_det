@@ -2,7 +2,7 @@ from mmengine.model import BaseModule
 
 import torch
 import torch.nn as nn
-from mmdet.models import SwinTransformer
+from mmdet.models import SwinTransformer, ResNet
 
 class LearnableResize(BaseModule):
     def __init__(self, channels=3, scale_factor=2):
@@ -32,10 +32,25 @@ class LearnableResize(BaseModule):
 
 
 class ResizeSwinTransformer(SwinTransformer):
+    def __init__(self, image_size, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # 在 backbone 之前添加一个可学习的 Resize 模块
+        assert image_size % 1024 == 0
+        self.learnable_resize = LearnableResize(scale_factor=image_size // 1024)
+        print(image_size // 1024, "x Resize applied in ResizeSwinTransformer")
+
+    def forward(self, x):
+        # 先通过可学习的 Resize 模块调整输入特征图的尺寸
+        x = self.learnable_resize(x)
+        # 然后再通过 SwinTransformer 的前向传播
+        return super().forward(x)
+
+
+class ResizeResNet(ResNet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # 在 backbone 之前添加一个可学习的 Resize 模块
-        self.learnable_resize = LearnableResize()
+        self.learnable_resize = LearnableResize(scale_factor=4)
 
     def forward(self, x):
         # 先通过可学习的 Resize 模块调整输入特征图的尺寸

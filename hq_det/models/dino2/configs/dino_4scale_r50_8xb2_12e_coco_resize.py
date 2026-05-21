@@ -1,32 +1,32 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-
+from mmcv.transforms import RandomChoice, RandomChoiceResize
+from mmcv.transforms.loading import LoadImageFromFile
 from mmengine.config import read_base
+from mmengine.model.weight_init import PretrainedInit
 from mmengine.optim.optimizer.optimizer_wrapper import OptimWrapper
 from mmengine.optim.scheduler.lr_scheduler import MultiStepLR
 from mmengine.runner.loops import EpochBasedTrainLoop, TestLoop, ValLoop
+from torch.nn.modules.batchnorm import BatchNorm2d
 from torch.nn.modules.normalization import GroupNorm
 from torch.optim.adamw import AdamW
 
 from mmdet.datasets.transforms import (LoadAnnotations, PackDetInputs,
                                        RandomCrop, RandomFlip, Resize)
 from mmdet.models import (DINO, ChannelMapper, DetDataPreprocessor, DINOHead,
-                          SwinTransformer)
+                          ResNet)
 from mmdet.models.losses.focal_loss import FocalLoss
 from mmdet.models.losses.iou_loss import GIoULoss
 from mmdet.models.losses.smooth_l1_loss import L1Loss
 from mmdet.models.task_modules import (BBoxL1Cost, FocalLossCost,
                                        HungarianAssigner, IoUCost)
-from hq_det.models.dino2.layers import ResizeSwinTransformer
+from hq_det.models.dino2.layers import ResizeResNet
 
-pretrained = 'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_large_patch4_window12_384_22k.pth'  # noqa
-num_levels = 5
 
 model = dict(
     type=DINO,
     num_queries=900,  # num_matching_queries
     with_box_refine=True,
     as_two_stage=True,
-    num_feature_levels=num_levels,
     data_preprocessor=dict(
         type=DetDataPreprocessor,
         mean=[123.675, 116.28, 103.53],
@@ -34,37 +34,30 @@ model = dict(
         bgr_to_rgb=True,
         pad_size_divisor=1),
     backbone=dict(
-        type=ResizeSwinTransformer,
-        image_size=2048,
-        pretrain_img_size=384,
-        embed_dims=192,
-        depths=[2, 2, 18, 2],
-        num_heads=[6, 12, 24, 48],
-        window_size=12,
-        mlp_ratio=4,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.2,
-        patch_norm=True,
-        out_indices=(0, 1, 2, 3),
+        type=ResizeResNet,
+        depth=50,
+        num_stages=4,
+        out_indices=(1, 2, 3),
+        frozen_stages=-1,
+        norm_cfg=dict(type=BatchNorm2d, requires_grad=False),
+        norm_eval=True,
         with_cp=True,
-        convert_weights=True,
-        init_cfg=dict(type='Pretrained', checkpoint=pretrained)),
+        style='pytorch',
+        init_cfg=dict(
+            type=PretrainedInit, checkpoint='torchvision://resnet50')),
     neck=dict(
         type=ChannelMapper,
-        in_channels=[192, 384, 768, 1536],
+        in_channels=[512, 1024, 2048],
         kernel_size=1,
         out_channels=256,
         act_cfg=None,
         norm_cfg=dict(type=GroupNorm, num_groups=32),
-        num_outs=num_levels),
+        num_outs=4),
     encoder=dict(
         num_layers=6,
         num_cp=6,
         layer_cfg=dict(
-            self_attn_cfg=dict(embed_dims=256, num_levels=num_levels,
+            self_attn_cfg=dict(embed_dims=256, num_levels=4,
                                dropout=0.0),  # 0.1 for DeformDETR
             ffn_cfg=dict(
                 embed_dims=256,
@@ -76,7 +69,7 @@ model = dict(
         layer_cfg=dict(
             self_attn_cfg=dict(embed_dims=256, num_heads=8,
                                dropout=0.0),  # 0.1 for DeformDETR
-            cross_attn_cfg=dict(embed_dims=256, num_levels=num_levels,
+            cross_attn_cfg=dict(embed_dims=256, num_levels=4,
                                 dropout=0.0),  # 0.1 for DeformDETR
             ffn_cfg=dict(
                 embed_dims=256,
