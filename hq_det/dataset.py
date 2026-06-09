@@ -278,7 +278,8 @@ class CombinedDataset(Dataset):
         self.datasets = datasets
         self.weights = weights
 
-        self.p = [w * len(d) for d, w in zip(self.datasets, self.weights)]
+        # self.p = [w * len(d) for d, w in zip(self.datasets, self.weights)]
+        self.p = weights
         self.p = [pp / sum(self.p) for pp in self.p]
         self.class_id2names = copy.deepcopy(datasets[0].class_id2names)
         pass
