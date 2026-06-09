@@ -16,6 +16,9 @@ from mmdet.models import (
     ChannelMapper,
     DINOHead,
     ResNet,
+    GroundingDINO,
+    GroundingDINOHead,
+    BertModel,
 )
 from mmdet.models.task_modules import (
     HungarianAssigner,
@@ -25,95 +28,94 @@ from mmdet.models.task_modules import (
 )
 import copy
 
-
-def get_gdino_config(image_size=224, num_classes=80):
+def get_gdino_config_mmswint(image_size=224, num_classes=80):
     return dict(
-        type=DINO,
-        num_queries=900,
-        with_box_refine=True,
-        as_two_stage=True,
-        data_preprocessor=dict(
-            type=DetDataPreprocessor,
-            mean=[123.675, 116.28, 103.53],
-            std=[58.395, 57.12, 57.375],
-            bgr_to_rgb=True,
-            pad_mask=False,
-        ),
-        backbone=dict(
-            type=SwinTransformer,
-            pretrain_img_size=image_size,
-            patch_size=image_size // 56,
-            embed_dims=96,
-            depths=[2, 2, 6, 2],
-            num_heads=[3, 6, 12, 24],
-            strides=(image_size // 56, 2, 2, 2),
-            window_size=7,
-            mlp_ratio=4,
-            qkv_bias=True,
-            qk_scale=None,
-            drop_rate=0.,
-            attn_drop_rate=0.,
-            drop_path_rate=0.2,
-            patch_norm=True,
-            out_indices=(1, 2, 3),
-            with_cp=False,
-            convert_weights=False),
-        neck=dict(
-            type=ChannelMapper,
-            in_channels=[192, 384, 768],
-            kernel_size=1,
-            out_channels=256,
-            act_cfg=None,
-            bias=True,
-            norm_cfg=dict(type='GN', num_groups=32),
-            num_outs=4),
-        encoder=dict(
-            num_layers=6,
-            # visual layer config
-            layer_cfg=dict(
-                self_attn_cfg=dict(embed_dims=256, num_levels=4, dropout=0.0),
-                ffn_cfg=dict(
-                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
-        ),
-        decoder=dict(
-            num_layers=6,
-            return_intermediate=True,
-            layer_cfg=dict(
-                # query self attention layer
-                self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
-                # cross attention layer query to image
-                cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
-                ffn_cfg=dict(
-                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
-            post_norm_cfg=None),
-        positional_encoding=dict(
-            num_feats=128, normalize=True, offset=0.0, temperature=20),
-        bbox_head=dict(
-            type=DINOHead,
-            num_classes=num_classes,
-            sync_cls_avg_factor=True,
-            loss_cls=dict(
-                type='FocalLoss',
-                use_sigmoid=True,
-                gamma=2.0,
-                alpha=0.25,
-                loss_weight=1.0),  # 2.0 in DeformDETR
-            loss_bbox=dict(type='L1Loss', loss_weight=5.0)),
-        dn_cfg=dict(  # TODO: Move to model.train_cfg ?
-            label_noise_scale=0.5,
-            box_noise_scale=1.0,  # 0.4 for DN-DETR
-            group_cfg=dict(dynamic=True, num_groups=None,
-                        num_dn_queries=100)),  # TODO: half num_dn_queries
-        # training and testing settings
-        train_cfg=dict(
-            assigner=dict(
-                type=HungarianAssigner,
-                match_costs=[
-                    dict(type=FocalLossCost, weight=2.0),
-                    dict(type=BBoxL1Cost, weight=5.0, box_format='xywh'),
-                    dict(type=IoUCost, iou_mode='giou', weight=2.0)
-                ])),
-        test_cfg=dict(max_per_img=300))
+    type=DINO,
+    num_queries=900,
+    with_box_refine=True,
+    as_two_stage=True,
+    data_preprocessor=dict(
+        type=DetDataPreprocessor,
+        mean=[123.675, 116.28, 103.53],
+        std=[58.395, 57.12, 57.375],
+        bgr_to_rgb=True,
+        pad_mask=False,
+    ),
+    backbone=dict(
+        type=SwinTransformer,
+        embed_dims=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=7,
+        mlp_ratio=4,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.,
+        attn_drop_rate=0.,
+        drop_path_rate=0.2,
+        patch_norm=True,
+        out_indices=(1, 2, 3),
+        with_cp=True,
+        convert_weights=True,
+        frozen_stages=-1,
+    ),
+    neck=dict(
+        type=ChannelMapper,
+        in_channels=[192, 384, 768],
+        kernel_size=1,
+        out_channels=256,
+        act_cfg=None,
+        bias=True,
+        norm_cfg=dict(type='GN', num_groups=32),
+        num_outs=4),
+    encoder=dict(
+        num_layers=6,
+        num_cp=6,
+        # visual layer config
+        layer_cfg=dict(
+            self_attn_cfg=dict(embed_dims=256, num_levels=4, dropout=0.0),
+            ffn_cfg=dict(
+                embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+    ),
+    decoder=dict(
+        num_layers=6,
+        return_intermediate=True,
+        layer_cfg=dict(
+            # query self attention layer
+            self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+            # cross attention layer query to image
+            cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+            ffn_cfg=dict(
+                embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+        post_norm_cfg=None),
+    positional_encoding=dict(
+        num_feats=128, normalize=True, offset=0.0, temperature=20),
+    bbox_head=dict(
+        type=DINOHead,
+        num_classes=num_classes,
+        sync_cls_avg_factor=True,
+        loss_cls=dict(
+            type='FocalLoss',
+            use_sigmoid=True,
+            gamma=2.0,
+            alpha=0.25,
+            loss_weight=1.0),  # 2.0 in DeformDETR
+        loss_bbox=dict(type='L1Loss', loss_weight=5.0)),
+    dn_cfg=dict(  # TODO: Move to model.train_cfg ?
+        label_noise_scale=0.5,
+        box_noise_scale=1.0,  # 0.4 for DN-DETR
+        group_cfg=dict(dynamic=True, num_groups=None,
+                       num_dn_queries=100)),  # TODO: half num_dn_queries
+    # training and testing settings
+    train_cfg=dict(
+        assigner=dict(
+            type=HungarianAssigner,
+            match_costs=[
+                dict(type='FocalLossCost', weight=2.0),
+                dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
+                dict(type='IoUCost', iou_mode='giou', weight=2.0)
+            ])),
+    test_cfg=dict(max_per_img=300))
 
 def get_gdino_config2(image_size=224, num_classes=80):
     return dict(
@@ -197,11 +199,218 @@ def get_gdino_config2(image_size=224, num_classes=80):
             ])),
     test_cfg=dict(max_per_img=300))
 
+def get_gdino_config_mmswinb(image_size=224, num_classes=80):
+    return dict(
+        type=DINO,
+        num_queries=900,
+        with_box_refine=True,
+        as_two_stage=True,
+        data_preprocessor=dict(
+            type=DetDataPreprocessor,
+            mean=[123.675, 116.28, 103.53],
+            std=[58.395, 57.12, 57.375],
+            bgr_to_rgb=True,
+            pad_mask=False,
+        ),
+        backbone=dict(
+            type='SwinTransformer',
+            pretrain_img_size=384,
+            patch_size=8,
+            strides=(8, 2, 2, 2),
+            embed_dims=128,
+            depths=[2, 2, 18, 2],
+            num_heads=[4, 8, 16, 32],
+            window_size=12,
+            mlp_ratio=4,
+            qkv_bias=True,
+            qk_scale=None,
+            drop_rate=0.,
+            attn_drop_rate=0.,
+            drop_path_rate=0.3,
+            patch_norm=True,
+            out_indices=(1, 2, 3),
+            with_cp=True,
+            convert_weights=True,
+            frozen_stages=-1,
+            init_cfg=None),
+        neck=dict(
+            type=ChannelMapper,
+            in_channels=[256, 512, 1024],
+            kernel_size=1,
+            out_channels=256,
+            act_cfg=None,
+            bias=True,
+            norm_cfg=dict(type='GN', num_groups=32),
+            num_outs=4),
+        encoder=dict(
+            num_layers=6,
+            num_cp=6,
+            # visual layer config
+            layer_cfg=dict(
+                self_attn_cfg=dict(embed_dims=256, num_levels=4, dropout=0.0),
+                ffn_cfg=dict(
+                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+        ),
+        decoder=dict(
+            num_layers=6,
+            return_intermediate=True,
+            layer_cfg=dict(
+                # query self attention layer
+                self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+                # cross attention layer query to image
+                cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+                ffn_cfg=dict(
+                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+            post_norm_cfg=None),
+        positional_encoding=dict(
+            num_feats=128, normalize=True, offset=0.0, temperature=20),
+        bbox_head=dict(
+            type=DINOHead,
+            num_classes=num_classes,
+            sync_cls_avg_factor=True,
+            loss_cls=dict(
+                type='FocalLoss',
+                use_sigmoid=True,
+                gamma=2.0,
+                alpha=0.25,
+                loss_weight=1.0),  # 2.0 in DeformDETR
+            loss_bbox=dict(type='L1Loss', loss_weight=5.0)),
+        dn_cfg=dict(  # TODO: Move to model.train_cfg ?
+            label_noise_scale=0.5,
+            box_noise_scale=1.0,  # 0.4 for DN-DETR
+            group_cfg=dict(dynamic=True, num_groups=None,
+                        num_dn_queries=100)),  # TODO: half num_dn_queries
+        # training and testing settings
+        train_cfg=dict(
+            assigner=dict(
+                type=HungarianAssigner,
+                match_costs=[
+                    dict(type=FocalLossCost, weight=2.0),
+                    dict(type=BBoxL1Cost, weight=5.0, box_format='xywh'),
+                    dict(type=IoUCost, iou_mode='giou', weight=2.0)
+                ])),
+        test_cfg=dict(max_per_img=300))
+    pass
+
+def get_gdino_config_mmswint_text(image_size=224, num_classes=80):
+    return dict(
+        type=GroundingDINO,
+        num_queries=900,
+        with_box_refine=True,
+        as_two_stage=True,
+        data_preprocessor=dict(
+            type=DetDataPreprocessor,
+            mean=[123.675, 116.28, 103.53],
+            std=[58.395, 57.12, 57.375],
+            bgr_to_rgb=True,
+            pad_mask=False,
+        ),
+        language_model=dict(
+            type=BertModel,
+            name='bert-base-uncased',
+            max_tokens=256,
+            pad_to_max=False,
+            use_sub_sentence_represent=True,
+            special_tokens_list=['[CLS]', '[SEP]', '.', '?'],
+            add_pooling_layer=False,
+        ),
+        backbone=dict(
+            type=SwinTransformer,
+            embed_dims=96,
+            depths=[2, 2, 6, 2],
+            num_heads=[3, 6, 12, 24],
+            window_size=7,
+            mlp_ratio=4,
+            qkv_bias=True,
+            qk_scale=None,
+            drop_rate=0.,
+            attn_drop_rate=0.,
+            drop_path_rate=0.2,
+            patch_norm=True,
+            out_indices=(1, 2, 3),
+            with_cp=True,
+            convert_weights=True,
+            frozen_stages=-1,
+        ),
+        neck=dict(
+            type=ChannelMapper,
+            in_channels=[192, 384, 768],
+            kernel_size=1,
+            out_channels=256,
+            act_cfg=None,
+            bias=True,
+            norm_cfg=dict(type='GN', num_groups=32),
+            num_outs=4),
+        encoder=dict(
+            num_layers=6,
+            num_cp=6,
+            # visual layer config
+            layer_cfg=dict(
+                self_attn_cfg=dict(embed_dims=256, num_levels=4, dropout=0.0),
+                ffn_cfg=dict(
+                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+            # text layer config
+            text_layer_cfg=dict(
+                self_attn_cfg=dict(num_heads=4, embed_dims=256, dropout=0.0),
+                ffn_cfg=dict(
+                    embed_dims=256, feedforward_channels=1024, ffn_drop=0.0)),
+            # fusion layer config
+            fusion_layer_cfg=dict(
+                v_dim=256,
+                l_dim=256,
+                embed_dim=1024,
+                num_heads=4,
+                init_values=1e-4),
+        ),
+        decoder=dict(
+            num_layers=6,
+            return_intermediate=True,
+            layer_cfg=dict(
+                # query self attention layer
+                self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+                # cross attention layer query to text
+                cross_attn_text_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+                # cross attention layer query to image
+                cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.0),
+                ffn_cfg=dict(
+                    embed_dims=256, feedforward_channels=2048, ffn_drop=0.0)),
+            post_norm_cfg=None),
+        positional_encoding=dict(
+            num_feats=128, normalize=True, offset=0.0, temperature=20),
+        bbox_head=dict(
+            type=GroundingDINOHead,
+            num_classes=256,
+            sync_cls_avg_factor=True,
+            contrastive_cfg=dict(max_text_len=256, log_scale='auto', bias=True),
+            loss_cls=dict(
+                type='FocalLoss',
+                use_sigmoid=True,
+                gamma=2.0,
+                alpha=0.25,
+                loss_weight=1.0),  # 2.0 in DeformDETR
+            loss_bbox=dict(type='L1Loss', loss_weight=5.0)),
+        dn_cfg=dict(  # TODO: Move to model.train_cfg ?
+            label_noise_scale=0.5,
+            box_noise_scale=1.0,  # 0.4 for DN-DETR
+            group_cfg=dict(dynamic=True, num_groups=None,
+                        num_dn_queries=100)),  # TODO: half num_dn_queries
+        # training and testing settings
+        train_cfg=dict(
+            assigner=dict(
+                type='HungarianAssigner',
+                match_costs=[
+                    dict(type='BinaryFocalLossCost', weight=2.0),
+                    dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
+                    dict(type='IoUCost', iou_mode='giou', weight=2.0)
+                ])),
+        test_cfg=dict(max_per_img=300))
+
+
 class HQGDINO(HQModel):
     def __init__(self, class_id2names=None, image_size=1120, **kwargs):
         super(HQGDINO, self).__init__(class_id2names, **kwargs)
         if class_id2names is None:
-            data = torch.load(kwargs['model'], map_location='cpu')
+            data = torch.load(kwargs['model'], map_location='cpu', weights_only=False)
             class_names = data['meta']['dataset_meta']['CLASSES']
             self.id2names = {i: name for i, name in enumerate(class_names)}
             self.image_size = data.get('image_size', image_size)
@@ -210,11 +419,12 @@ class HQGDINO(HQModel):
             self.image_size = image_size
             pass
 
-        if image_size % 224 != 0:
-            raise ValueError('image_size must be multiple of 224')
+        # if image_size % 224 != 0:
+        #     raise ValueError('image_size must be multiple of 224')
         
         num_classes = max(self.id2names.keys()) + 1
-        self.model_config = get_gdino_config2(num_classes=num_classes, image_size=image_size) 
+        # num_classes = 80
+        self.model_config = get_gdino_config_mmswinb(num_classes=num_classes, image_size=image_size) 
         self.model = MODELS.build(copy.deepcopy(self.model_config))
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
@@ -229,8 +439,14 @@ class HQGDINO(HQModel):
 
     def load_model(self, path):
         data = torch.load(path, map_location='cpu', weights_only=False)
-        new_state_dict={k: v for k, v in data['state_dict'].items() if data['state_dict'][k].shape == self.model.state_dict()[k].shape}
-        print(len(new_state_dict), len(data['state_dict']))
+        if "state_dict" not in data:
+            state_dict = data
+        else:
+            state_dict = data["state_dict"]
+            pass
+        state_dict = {k: v for k, v in state_dict.items() if k in self.model.state_dict()}
+        new_state_dict={k: v for k, v in state_dict.items() if state_dict[k].shape == self.model.state_dict()[k].shape}
+        print(len(self.model.state_dict()), len(new_state_dict))
         self.model.load_state_dict(new_state_dict, strict=False)
 
 
@@ -285,7 +501,7 @@ class HQGDINO(HQModel):
         return results
         
 
-    def imgs_to_batch(self, imgs):
+    def imgs_to_batch(self, imgs, image_size):
         # Convert a list of images to a batch
 
         batch_data = {
@@ -295,7 +511,7 @@ class HQGDINO(HQModel):
         boxes = torch.zeros((0, 4))
         for img in imgs:
             img = cv2.GaussianBlur(img, (3, 3), 1.0)
-            img, _ = torch_utils.pad_image_array(img, boxes, (self.image_size, self.image_size), pad_value=114)
+            img, _ = torch_utils.pad_image_array(img, boxes, (image_size, image_size), pad_value=114)
             img = torch.permute(torch.from_numpy(img), (2, 0, 1)).contiguous()
             batch_data['inputs'].append(img)
             data_sample = DetDataSample(metainfo={
@@ -336,7 +552,7 @@ class HQGDINO(HQModel):
             pass
         device = self.device
         with torch.no_grad():
-            batch_data = self.imgs_to_batch(imgs)
+            batch_data = self.imgs_to_batch(imgs, image_size=max_size)
             batch_data = torch_utils.batch_to_device(batch_data, device)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=False):
                 forward_result = self.forward(batch_data)

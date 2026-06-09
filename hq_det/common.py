@@ -44,7 +44,11 @@ class HQTrainerArguments(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(protected_namespaces=(), arbitrary_types_allowed=True)    # 模型配置
     
     # 数据集相关
+    dataset_provider: str = "roboflow"    # 数据集提供者类型
     data_path: str    # 数据集路径
+    data_path_list: List[str] = None    # 数据集路径列表（用于联合多个数据集）
+    data_path_weight_list: List[float] = None    # 数据集权重列表（用于联合多个数据集）
+    data_path_valid: str = None    # 验证集路径(用于联合多个数据集)
     image_size: int = 640    # 图像大小
     num_data_workers: int = 0    # 数据加载器线程数
     
@@ -83,8 +87,11 @@ class HQTrainerArguments(pydantic.BaseModel):
     sync_bn: bool = True  # 是否启用同步 BatchNorm（分布式训练）
 
     # 增强相关
+    augment_proba: float = 0.3
     augment_split_size: int = -1
     augment_split_proba: float = 0.5
 
     augment_foreground_proba: float = 0.8
     augment_foreground_path: str = ""
+
+    augment_force_resize: bool = False

@@ -15,7 +15,7 @@ from torch import distributed
 import numpy as np
 
 
-class MyTrainer(HQTrainer):
+class DinoEvaTrainer(HQTrainer):
     def __init__(self, args: HQTrainerArguments):
         super().__init__(args)
         pass
@@ -42,25 +42,19 @@ class MyTrainer(HQTrainer):
 
         return batch_data_dict
         
-    def build_dataset(self, train_transforms=None, val_transforms=None):
-        # Load the dataset using the specified path and device
-        path_train = os.path.join(self.args.data_path, "train")
-        path_val = os.path.join(self.args.data_path, "valid")
-        image_path_train = path_train
-        image_path_val = path_val
-        annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
-        annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
+    def build_train_transforms(self, image_size, proba):
+        transforms = super().build_train_transforms(image_size, proba)
+        transforms.extend([
+            augment.Pad(min_size=256)
+        ])
+        return transforms
 
-        train_transforms.extend([augment.Pad(min_size=256)])
-        val_transforms.extend([augment.Pad(min_size=256)])
-
-        dataset_train = CocoDetection(
-            image_path_train, annotation_file_train, transforms=train_transforms
-        )
-        dataset_val = CocoDetection(
-            image_path_val, annotation_file_val, transforms=val_transforms
-        )
-        return dataset_train, dataset_val
+    def build_valid_transforms(self, image_size):
+        transforms = super().build_valid_transforms(image_size)
+        transforms.extend([
+            augment.Pad(min_size=256)
+        ])
+        return transforms
 
 
 
@@ -68,7 +62,7 @@ def run(
         data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=4, image_size=1024,
         gradient_update_interval=1, devices=[0], lr_backbone_mult=0.1, num_data_workers=12, checkpoint_name='ckpt.pth'
     ):
-    trainer = MyTrainer(
+    trainer = DinoEvaTrainer(
         HQTrainerArguments(
             data_path=data_path,
             num_epoches=num_epoches,

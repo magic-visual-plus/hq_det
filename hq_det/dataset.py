@@ -7,6 +7,7 @@ from pycocotools import mask as coco_mask
 import loguru
 import numpy as np
 import copy
+import json
 
 from ultralytics.utils import DEFAULT_CFG
 from PIL import Image
@@ -130,7 +131,8 @@ class CocoDetection(torchvision.datasets.CocoDetection):
     def _load_image(self, id: int) -> np.array:
         path = self.coco.loadImgs(id)[0]["file_name"]
         # print(path)
-        return cv2.imread(os.path.join(self.root, path))
+        # return cv2.imread(os.path.join(self.root, path))
+        return cv2.imdecode(np.fromfile(os.path.join(self.root, path), dtype=np.uint8), cv2.IMREAD_COLOR)
 
     def __len__(self):
         # return 100
@@ -291,3 +293,25 @@ class CombinedDataset(Dataset):
         data_idx = random.randint(0, len(dataset) - 1)
         data = dataset[data_idx]
         return data
+    pass
+
+
+class PatchDataset(Dataset):
+    def __init__(self, input_path):
+        annotation_file = os.path.join(input_path, "_patch_annotations.json")
+        with open(annotation_file, 'r') as f:
+            patch_annotations = json.load(f)
+            pass
+        self.input_path = input_path
+        self.patch_annotations = patch_annotations
+        pass
+
+    def __len__(self):
+        return len(self.patch_annotations['annotations'])
+
+    def __getitem__(self, idx):
+        ann = self.patch_annotations['annotations'][idx]
+        filename = ann['filename']
+        label = np.array(ann['label'], dtype=np.int32).reshape((32, 32))
+        img = cv2.imread(os.path.join(self.input_path, filename))
+        return img, label

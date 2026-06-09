@@ -9,7 +9,7 @@ import torch.optim
 from hq_det import torch_utils
 
 
-class MyTrainer(HQTrainer):
+class YoloTrainer(HQTrainer):
     def __init__(self, args: HQTrainerArguments):
         super().__init__(args)
         pass
@@ -54,34 +54,20 @@ class MyTrainer(HQTrainer):
         new_batch['bboxes'] = new_batch['bboxes_cxcywh_norm']
         return new_batch
     
+    def build_train_transforms(self, image_size, p):
+        transforms = super().build_train_transforms(image_size, p)
+        transforms.extend([
+            augment.BGR2RGB(),
+            augment.ToTensor(),
+        ])
+        return transforms
 
-    def build_dataset(self, train_transforms=None, val_transforms=None):
-        # Load the dataset using the specified path and device
-        path_train = os.path.join(self.args.data_path, "train")
-        path_val = os.path.join(self.args.data_path, "valid")
-        image_path_train = path_train
-        image_path_val = path_val
-        annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
-        annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
-        train_transforms.extend([
+    def build_valid_transforms(self, image_size, p):
+        transforms = super().build_train_transforms(image_size, p)
+        transforms.extend([
             augment.BGR2RGB(),
             augment.ToTensor(),
         ])
-        val_transforms.extend([
-            augment.BGR2RGB(),
-            augment.ToTensor(),
-        ])
-        dataset_train = CocoDetection(
-            image_path_train, annotation_file_train, transforms=train_transforms
-        )
-        dataset_val = CocoDetection(
-            image_path_val, annotation_file_val, transforms=val_transforms
-        )
-        return dataset_train, dataset_val
-    
-    def build_scheduler(self, optimizer):
-        return torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
-            end_factor=self.args.lr_min / self.args.lr0
-        )
+        return transforms
+
 

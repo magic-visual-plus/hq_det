@@ -11,7 +11,7 @@ from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
 
 
-class MyTrainer(HQTrainer):
+class RtDetrTrainer(HQTrainer):
     def __init__(self, args: HQTrainerArguments):
         super().__init__(args)
         pass
@@ -47,47 +47,29 @@ class MyTrainer(HQTrainer):
         
         return new_batch
     
-
-    def build_dataset(self, train_transforms=None, val_transforms=None):
-        # Load the dataset using the specified path and device
-        path_train = os.path.join(self.args.data_path, "train")
-        path_val = os.path.join(self.args.data_path, "valid")
-        image_path_train = path_train
-        image_path_val = path_val
-        annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
-        annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
-
-        train_transforms.extend([
+    def build_train_transforms(self, image_size, proba):
+        transforms = super().build_train_transforms(image_size, proba)
+        transforms.extend([
             augment.BGR2RGB(),
             augment.ToTensor(),
         ])
-        val_transforms.extend([
+        return transforms
+
+    def build_valid_transforms(self, image_size):
+        transforms = super().build_valid_transforms(image_size)
+        transforms.extend([
             augment.BGR2RGB(),
             augment.ToTensor(),
         ])
-
-        dataset_train = CocoDetection(
-            image_path_train, annotation_file_train, transforms=train_transforms
-        )
-        dataset_val = CocoDetection(
-            image_path_val, annotation_file_val, transforms=val_transforms
-        )
-        return dataset_train, dataset_val
-    
-    def build_scheduler(self, optimizer):
-        # gamma = (self.args.lr_min / self.args.lr0) ** (1.0 / self.args.num_epoches)
-        # return torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=gamma)
-        return torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
-            end_factor=self.args.lr_min / self.args.lr0
-        )
-
+        return transforms
 
 
 def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_names=None, batch_size=6, image_size=1024,
         gradient_update_interval=1, lr_backbone_mult=1.0, num_data_workers=16, checkpoint_name='ckpt.pth',
-        devices=[0]):
-    trainer = MyTrainer(
+        devices=[0],
+        augment_foreground_path="", augment_foreground_proba=0.0,
+    ):
+    trainer = RtDetrTrainer(
         HQTrainerArguments(
             data_path=data_path,
             num_epoches=num_epoches,
@@ -110,6 +92,8 @@ def run(data_path, output_path, num_epoches, lr0, load_checkpoint, eval_class_na
             gradient_update_interval=gradient_update_interval,
             checkpoint_name=checkpoint_name,
             find_unused_parameters=True,
+            augment_foreground_path=augment_foreground_path,
+            augment_foreground_proba=augment_foreground_proba,
         )
     )
     trainer.run()

@@ -12,6 +12,7 @@ from .common import PredictionResult
 from tqdm import tqdm
 import torch
 from .common import HQTrainerArguments
+from .dataset_provider import HQDatasetProvider, HQDatasetProviderRoboflow, HQDatasetProviderCombined
 from torch import distributed
 from torch.nn.parallel import DistributedDataParallel as DDP
 from .models.base import HQModel
@@ -60,7 +61,7 @@ def format_stats(info):
 
 class HQTrainer:
     def __init__(self, args: HQTrainerArguments):
-        self.args = args
+        self.args :HQTrainerArguments = args
         self.logger = loguru.logger
         self.results_file = os.path.join(args.output_path, 'results.csv')
         self.training_state = {
@@ -99,8 +100,13 @@ class HQTrainer:
         # setup output directories
         self._setup_output_directories()
 
-    def build_dataset(self, train_transforms, val_transforms) -> Tuple[CocoDetection, CocoDetection]:
-        raise NotImplementedError
+    def build_dataset_provider(self, ) -> HQDatasetProvider:
+        if self.args.dataset_provider == "roboflow":
+            return HQDatasetProviderRoboflow(self.args.data_path)
+        if self.args.dataset_provider == "combined":
+            return HQDatasetProviderCombined(self.args.data_path_list, self.args.data_path_weight_list, self.args.data_path_valid)
+        else:
+            raise ValueError(f"Unsupported dataset provider: {self.args.dataset_provider}")
 
     def build_model(self) -> HQModel:
         raise NotImplementedError
@@ -108,7 +114,7 @@ class HQTrainer:
     def collate_fn(self, batch):
         raise NotImplementedError
 
-    def get_train_transforms(self, image_size, p=0.3):
+    def build_train_transforms(self, image_size, p=0.3):
         """get train data augmentation"""
         transforms = []
         transforms.append(augment.ToNumpy())
@@ -127,12 +133,16 @@ class HQTrainer:
                     self.args.augment_foreground_path, 
                     self.args.augment_foreground_proba))
             pass
+        
+        force_resize = self.args.augment_force_resize
 
         # 数据增强
         transforms.append(augment.RandomCrop(p=p))
         transforms.append(augment.RandomResize(p=p, max_size=image_size))
         # prevent image is too big for speed
-        transforms.append(augment.Resize(max_size=image_size*2))
+        if image_size <= 2560:
+            transforms.append(augment.Resize(max_size=image_size*2))
+            pass
 
         transforms.append(augment.RandomHorizontalFlip())
         transforms.append(augment.RandomVerticalFlip())
@@ -149,7 +159,7 @@ class HQTrainer:
         transforms.append(augment.RandomShift(p=p, max_shift=0.02))
         
         # basic processing
-        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.Resize(max_size=image_size, force=force_resize))
         transforms.append(augment.RandomBlur(p=1.0, ksize=[3,5,7,9]))
         transforms.append(augment.FilterSmallBox())
         transforms.append(augment.Format())
@@ -157,22 +167,17 @@ class HQTrainer:
         return augment.Compose(transforms)
     
 
-    def get_val_transforms(self, image_size):
+    def build_valid_transforms(self, image_size):
         """get validation data augmentation"""
+        force_resize = self.args.augment_force_resize
         transforms = []
         transforms.append(augment.ToNumpy())
-        transforms.append(augment.Resize(max_size=image_size))
+        transforms.append(augment.Resize(max_size=image_size, force=force_resize))
         transforms.append(augment.RandomBlur(p=1.0, ksize=[3]))
         transforms.append(augment.FilterSmallBox())
         transforms.append(augment.Format())
         
         return augment.Compose(transforms)
-    
-    def build_transforms(self, aug=True):
-        if aug:
-            return self.get_train_transforms(self.args.image_size)
-        else:
-            return self.get_val_transforms(self.args.image_size)
 
     def build_optimizer(self, model: HQModel) -> torch.optim.Optimizer:
         if isinstance(model, DDP):
@@ -365,19 +370,20 @@ class HQTrainer:
         return gt_records
 
     def _setup_datasets_and_transforms(self) -> Tuple[CocoDetection, CocoDetection]:
-        trainsforms_train = self.build_transforms(aug=True)
-        trainsforms_val = self.build_transforms(aug=False)
+        train_transforms = self.build_train_transforms(self.args.image_size, self.args.augment_proba)
+        valid_transforms = self.build_valid_transforms(self.args.image_size)
         
-        dataset_train, dataset_val = self.build_dataset(
-            trainsforms_train, trainsforms_val)
+        dataset_provider = self.build_dataset_provider()
+        train_dataset = dataset_provider.build_train_dataset(train_transforms)
+        valid_dataset = dataset_provider.build_valid_dataset(valid_transforms)
 
         # print dataset information
         if self.HQ_DEBUG:
-            print_dataset_summary(dataset_train, dataset_val)
+            print_dataset_summary(train_dataset, valid_dataset)
             # print augmentation steps
-            print_augmentation_steps(trainsforms_train, trainsforms_val)
+            print_augmentation_steps(train_transforms, valid_transforms)
 
-        return dataset_train, dataset_val
+        return train_dataset, valid_dataset
 
     def _setup_class_configuration(self) -> List[int]:
         if self.args.class_id2names is None:
@@ -408,8 +414,10 @@ class HQTrainer:
         if len(self.args.devices) > 1:
             # distributed training
             self.logger.info("Setting up distributed training environment...")
-            torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-            torch.distributed.init_process_group("nccl")
+            if not torch.distributed.is_initialized():
+                torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+                torch.distributed.init_process_group("nccl")
+                pass
             rank = distributed.get_rank()
             # create model and move it to GPU with id rank
             device_id = rank % torch.cuda.device_count()
@@ -437,6 +445,7 @@ class HQTrainer:
             # single GPU training
             self.logger.info("Setting up single GPU training environment...")
             sampler_train = torch.utils.data.RandomSampler(self.dataset_train)
+            # sampler_train = torch.utils.data.SequentialSampler(self.dataset_train)
             sampler_val = torch.utils.data.SequentialSampler(self.dataset_val)
             device = self.args.devices[0]
             device = f'cuda:{device}' if torch.cuda.is_available() else 'cpu'

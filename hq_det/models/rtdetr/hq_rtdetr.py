@@ -120,7 +120,7 @@ class HQRTDETR(HQModel):
         new_imgs = []
         for img in imgs:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.GaussianBlur(img, (3, 3), 0)
+            img = cv2.GaussianBlur(img, (3, 3), 1.0)
             img = VF.to_tensor(img)
             img, _ = torch_utils.pad_image(img, torch.zeros((0, 4)), (max_h, max_w))
             new_imgs.append(img)

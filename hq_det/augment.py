@@ -705,8 +705,9 @@ class ToNumpy:
     pass
 
 class Resize:
-    def __init__(self, max_size=640):
+    def __init__(self, max_size=640, force=False):
         self.max_size = max_size
+        self.force = force
 
     def __call__(self, data):
         img = data['img']
@@ -717,7 +718,7 @@ class Resize:
 
         max_hw = max(h, w)
         scale = self.max_size / max_hw
-        if max_hw > self.max_size:
+        if max_hw > self.max_size or self.force:
             scale = self.max_size / max_hw
             new_h, new_w = int(h * scale), int(w * scale)
             img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
@@ -784,6 +785,8 @@ class Compose:
             pass
         else:
             raise TypeError(f"Unsupported type: {type(transforms)}")
+        
+        return self
         pass
 
 

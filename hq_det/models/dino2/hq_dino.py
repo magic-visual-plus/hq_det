@@ -21,6 +21,9 @@ class HQDINO(HQModel):
             class_names = data['meta']['dataset_meta']['CLASSES']
             self.id2names = {i: name for i, name in enumerate(class_names)}
             self.image_size = kwargs.get('image_size', data.get('image_size', 2048))
+            if self.image_size == 1536:
+                self.image_size = 2048
+                pass
             self.model_config = data.get('model_config', None)
         else:
             self.id2names = class_id2names
@@ -29,7 +32,7 @@ class HQDINO(HQModel):
             pass
 
         self.num_classes = max(self.id2names.keys()) + 1
-
+        print(self.model_config)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         dino_config_path = None
         if kwargs.get('config_path'):
@@ -86,8 +89,6 @@ class HQDINO(HQModel):
 
     def load_model(self, path):
         data = torch.load(path, map_location='cpu', weights_only=False)
-        print(data['state_dict']["bbox_head.reg_branches.0.2.weight"].shape)
-        print(self.model.state_dict()["bbox_head.reg_branches.0.2.weight"].shape)
         new_state_dict = {k: v for k, v in data['state_dict'].items() if k in self.model.state_dict() and data['state_dict'][k].shape == self.model.state_dict()[k].shape}
         print(len(new_state_dict), len(data['state_dict']))
         missing_keys, unexpected_keys = self.model.load_state_dict(new_state_dict, strict=False)
@@ -184,9 +185,10 @@ class HQDINO(HQModel):
             pass
         
         if max_size > 0:
+            # should resize to fit the model
             for i in range(len(imgs)):
                 max_hw = max(imgs[i].shape[0], imgs[i].shape[1])
-                if max_hw > max_size:
+                if True:
                     rate = max_size / max_hw
                     imgs[i] = cv2.resize(imgs[i], (int(imgs[i].shape[1] * rate), int(imgs[i].shape[0] * rate)))
                     img_scales[i] = rate

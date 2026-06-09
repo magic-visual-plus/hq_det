@@ -9,6 +9,7 @@ import torch.optim
 from hq_det import torch_utils
 from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
+from . import tools_mmdet
 
 
 class MyTrainer(HQTrainer):
@@ -23,63 +24,15 @@ class MyTrainer(HQTrainer):
         return model
     
     def collate_fn(self, batch):
-
-        max_h, max_w = self.args.image_size, self.args.image_size
-        
-        for b in batch:
-            b['img'], b['bboxes_cxcywh_norm'] = torch_utils.pad_image_array(
-                b['img'], b['bboxes_cxcywh_norm'], (max_h, max_w), pad_value=114)
-            pass
-
-        new_batch = {}
-        new_batch['inputs'] = [torch.permute(torch.from_numpy(b['img']), (2, 0, 1)).contiguous() for b in batch]
-        new_batch['image_id'] = [b['image_id'] for b in batch]
-        new_batch['bboxes_xyxy'] = torch.cat([b['bboxes_xyxy'] for b in batch], 0)
-        new_batch['cls'] = torch.cat([b['cls'] for b in batch], 0)
-        new_batch['batch_idx'] = torch.cat([b['batch_idx']+i for i, b in enumerate(batch)], 0)
-
-        data_samples = []
-
-        for i, b in enumerate(batch):
-            data_sample = DetDataSample(metainfo={
-                'img_shape': (b['img'].shape[0], b['img'].shape[1]),
-            })
-            gt_instance = InstanceData()
-            gt_instance.bboxes = b['bboxes_xyxy']
-            gt_instance.labels = b['cls']
-            data_sample.gt_instances = gt_instance
-            data_samples.append(data_sample)
-            pass
-
-        new_batch['data_samples'] = data_samples
-        return new_batch
+        return tools_mmdet.collate_fn(batch)
     
-
-    def build_dataset(self, train_transforms=None, val_transforms=None):
-        # Load the dataset using the specified path and device
-        path_train = os.path.join(self.args.data_path, "train")
-        path_val = os.path.join(self.args.data_path, "valid")
-        image_path_train = path_train
-        image_path_val = path_val
-        annotation_file_train = os.path.join(path_train, "_annotations.coco.json")
-        annotation_file_val = os.path.join(path_val, "_annotations.coco.json")
-
-        train_transforms.extend([augment.Pad(min_size=256)])
-        val_transforms.extend([augment.Pad(min_size=256)])
-
-        dataset_train = CocoDetection(
-            image_path_train, annotation_file_train, transforms=train_transforms
-        )
-        dataset_val = CocoDetection(
-            image_path_val, annotation_file_val, transforms=val_transforms
-        )
-        return dataset_train, dataset_val
+    def build_train_transforms(self, image_size, p=0.3):
+        transforms = super().build_train_transforms(image_size, p)
+        return transforms.extend([augment.Pad(min_size=256)])
     
-    def build_scheduler(self, optimizer):
-        return torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
-            end_factor=self.args.lr_min / self.args.lr0
-        )
+    def build_valid_transforms(self, image_size):
+        transforms = super().build_valid_transforms(image_size)
+        return transforms.extend([augment.Pad(min_size=256)])
 
 
 
