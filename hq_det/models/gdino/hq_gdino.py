@@ -424,7 +424,7 @@ class HQGDINO(HQModel):
         
         num_classes = max(self.id2names.keys()) + 1
         # num_classes = 80
-        self.model_config = get_gdino_config_mmswinb(num_classes=num_classes, image_size=image_size) 
+        self.model_config = get_gdino_config2(num_classes=num_classes, image_size=image_size) 
         self.model = MODELS.build(copy.deepcopy(self.model_config))
         self.load_model(kwargs['model'])
         self.device = torch.device('cpu')
