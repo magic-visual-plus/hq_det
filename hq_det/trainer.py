@@ -157,6 +157,7 @@ class HQTrainer:
         transforms.append(augment.RandomBrightness(p=p, alpha=0.1))
         transforms.append(augment.RandomPixelValueShift(p=p))
         transforms.append(augment.RandomShift(p=p, max_shift=0.02))
+        transforms.append(augment.RandomPad(p=p, max_size=image_size))
         
         # basic processing
         transforms.append(augment.Resize(max_size=image_size, force=force_resize))

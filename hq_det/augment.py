@@ -760,6 +760,33 @@ class Pad:
 
         return data
 
+
+class RandomPad:
+    def __init__(self, max_size=1024, p=0.5):
+        self.max_size = max_size
+        self.p = p
+    
+    def __call__(self, data):
+        img = data['img']
+        bboxes = data['bboxes']
+
+        h, w = img.shape[:2]
+        max_hw = max(h, w)
+
+        if max_hw < self.max_size and random.random() <= self.p:
+            random_bg = np.random.randint(0, 256, (self.max_size, self.max_size, 3), dtype=img.dtype)
+            start_x = random.randint(0, self.max_size - w)
+            start_y = random.randint(0, self.max_size - h)
+            random_bg[start_y:start_y + h, start_x:start_x + w] = img
+            img = random_bg
+            bboxes = bboxes + np.array([start_x, start_y, start_x, start_y], dtype=bboxes.dtype)
+            pass
+
+        data['img'] = img.copy()
+        data['bboxes'] = bboxes
+
+        return data
+
 class Compose:
     def __init__(self, transforms):
         self.transforms = transforms
