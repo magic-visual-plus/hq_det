@@ -1,5 +1,8 @@
+import csv
 import os
 import time
+import math
+from copy import deepcopy
 
 import torch.distributed
 from . import torch_utils
@@ -25,6 +28,39 @@ from .print_utils import (
     print_augmentation_steps, 
     print_training_arguments
 )
+
+
+def de_parallel(model):
+    return model.module if isinstance(model, DDP) else model
+
+
+class ModelEMA:
+    def __init__(self, model, decay=0.9999, tau=2000.0):
+        self.ema = deepcopy(de_parallel(model)).eval()
+        self.decay = decay
+        self.tau = tau
+        self.updates = 0
+
+        for param in self.ema.parameters():
+            param.requires_grad_(False)
+
+    def _get_decay(self):
+        if self.tau <= 0:
+            return self.decay
+        return self.decay * (1.0 - math.exp(-self.updates / self.tau))
+
+    @torch.no_grad()
+    def update(self, model):
+        self.updates += 1
+        decay = self._get_decay()
+        model_state = de_parallel(model).state_dict()
+
+        for key, ema_value in self.ema.state_dict().items():
+            model_value = model_state[key].detach()
+            if ema_value.dtype.is_floating_point:
+                ema_value.mul_(decay).add_(model_value, alpha=1.0 - decay)
+            else:
+                ema_value.copy_(model_value)
 
 def add_stats(info1, info2):
     for k, v in info2.items():
@@ -70,7 +106,12 @@ class HQTrainer:
             'train_info': {},       # train metrics
             'val_info': {},         # validation metrics
         }
+        self.ema = None
+        self._results_fieldnames = None
         self.HQ_DEBUG =  int(os.environ.get('HQ_DEBUG', '1'))
+
+    def get_total_epochs(self) -> int:
+        return int(self.args.num_epoches + self.args.warmup_epochs)
 
     def setup_training_environment(self):
         # print training arguments
@@ -96,6 +137,9 @@ class HQTrainer:
         
         # setup optimization components
         self.optimizer, self.scheduler, self.scaler = self._setup_optimization_components()
+
+        # setup EMA after the model is already on its training device
+        self.ema = self._setup_ema()
         
         # setup output directories
         self._setup_output_directories()
@@ -191,6 +235,22 @@ class HQTrainer:
             optimizer, start_factor=1.0, total_iters=self.args.num_epoches,
             end_factor=self.args.lr_min / self.args.lr0
         )
+
+    def _setup_ema(self):
+        if not self.args.use_ema:
+            return None
+        self.logger.info(
+            f"EMA enabled - decay: {self.args.ema_decay}, tau: {self.args.ema_tau}"
+        )
+        return ModelEMA(self.model, decay=self.args.ema_decay, tau=self.args.ema_tau)
+
+    def get_eval_model(self) -> HQModel:
+        return self.ema.ema if self.ema is not None else self.model
+
+    def update_model_epoch(self, model: HQModel) -> None:
+        model = de_parallel(model)
+        if hasattr(model, "update_epoch"):
+            model.update_epoch()
     
     def is_master(self) -> bool:
         return len(self.args.devices) == 1 or (torch.distributed.is_initialized() and torch.distributed.get_rank() == 0)
@@ -220,6 +280,8 @@ class HQTrainer:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=self.args.max_grad_norm)
         scaler.step(optimizer)
         scaler.update()
+        if self.ema is not None:
+            self.ema.update(model)
         optimizer.zero_grad()
 
     def train_step(
@@ -285,7 +347,7 @@ class HQTrainer:
         # create progress bar
         bar_train = self._create_progress_bar(
             self.dataloader_train, 
-            f"Train Epoch[{epoch}/{self.args.num_epoches + self.args.warmup_epochs - 1}]"
+            f"Train Epoch[{epoch}/{self.get_total_epochs() - 1}]"
         )
         
         for i_batch, batch_data in enumerate(bar_train):
@@ -311,7 +373,8 @@ class HQTrainer:
         return train_losses, train_info
 
     def valid_epoch(self, epoch: int) -> Tuple[List[float], dict, dict]:
-        self.model.eval()
+        eval_model = self.get_eval_model()
+        eval_model.eval()
         val_losses = []
         val_info = dict()
         stat = dict()
@@ -321,11 +384,11 @@ class HQTrainer:
         if self.is_master():
             bar_val = self._create_progress_bar(
                 self.dataloader_val, 
-                f"Valid Epoch[{epoch}/{self.args.num_epoches + self.args.warmup_epochs - 1}]"
+                f"Valid Epoch[{epoch}/{self.get_total_epochs() - 1}]"
             )
             
             for i_batch, batch_data in enumerate(bar_val):
-                loss, info, preds = self.valid_step(self.model, batch_data, self.device)
+                loss, info, preds = self.valid_step(eval_model, batch_data, self.device)
                 
                 val_info = add_stats(val_info, info)
                 val_losses.append(loss.item())
@@ -637,11 +700,12 @@ class HQTrainer:
         self.scheduler.step()
         start_time = time.time()
         
-        for i_epoch in range(self.args.num_epoches + self.args.warmup_epochs):
+        for i_epoch in range(self.get_total_epochs()):
             epoch_start_time = time.time()
             
             # Training process
             train_losses, train_info = self.train_epoch(i_epoch)
+            self.update_model_epoch(self.model)
             train_time = time.time() - epoch_start_time
             train_time_formatted = self._format_time(train_time)
             
@@ -663,15 +727,26 @@ class HQTrainer:
             
             self._log_epoch_summary(summary)
             
-            # Update training state
-            self._update_training_state(i_epoch, train_info, val_info, stat.get('mAP', 0.0))
-
             # Save results and checkpoints
+            train_info_avg = {
+                key: value / max(len(self.dataloader_train), 1)
+                for key, value in train_info.items()
+            }
+            metric = stat.get('mAP', 0.0)
             if self.is_master():
-                self.save_epoch_result(i_epoch, stat, self.args.output_path)
-                self._save_best_model(self.model, stat.get('mAP', 0.0))
+                self.save_epoch_result(
+                    i_epoch,
+                    stat,
+                    self.args.output_path,
+                    train_info=train_info_avg,
+                    val_info=val_info,
+                )
+                self._save_best_model(self.get_eval_model(), metric)
+
+            # Update after best-model comparison so a new maximum can be detected.
+            self._update_training_state(i_epoch, train_info, val_info, metric)
             
-            self._save_checkpoint(self.model)
+            self._save_checkpoint(self.get_eval_model())
 
             # Check early stopping
             if self.args.early_stopping and \
@@ -698,18 +773,42 @@ class HQTrainer:
         self.logger.info(f'Start Time: {start_time_str}, End Time: {end_time_str}')
         self.logger.info(f'Total Time: {total_time_formatted[0]:02d}:{total_time_formatted[1]:02d}:{total_time_formatted[2]:02d}')
 
-    def save_epoch_result(self, iepoch: int, stat: dict, output_path: str) -> None:
-        header = ['mAP', 'precision', 'recall', 'f1_score', 'fnr', 'confidence', 'train/box_loss', 'train/cls_loss', 'train/giou_loss', 'val/box_loss', 'val/cls_loss', 'val/giou_loss']
-        
-        if iepoch == 0:
-            # add header
-            with open(self.results_file, 'w') as f:
-                f.write(','.join(header) + '\n')
+    def save_epoch_result(
+        self,
+        iepoch: int,
+        stat: dict,
+        output_path: str,
+        train_info: dict = None,
+        val_info: dict = None,
+        lr_info: dict = None,
+    ) -> None:
+        def scalar(value):
+            if isinstance(value, torch.Tensor):
+                return value.detach().float().mean().cpu().item()
+            if isinstance(value, np.generic):
+                return value.item()
+            return value
 
-        with open(self.results_file, 'a') as f:
-            values = [stat[colname] for colname in header if colname in stat]
-            f.write(','.join([str(v) for v in values]) + '\n')
-            pass
+        metric_names = ['mAP', 'precision', 'recall', 'f1_score', 'fnr', 'confidence']
+        row = {}
+        for name in metric_names:
+            row[name] = scalar(stat[name]) if name in stat else ''
+
+        for prefix, info in (('train', train_info), ('val', val_info)):
+            for name, value in (info or {}).items():
+                row[f'{prefix}/{name}_loss'] = scalar(value)
+
+        row.update({name: scalar(value) for name, value in (lr_info or {}).items()})
+        mode = 'w' if iepoch == 0 else 'a'
+        if iepoch == 0 or self._results_fieldnames is None:
+            self._results_fieldnames = list(row.keys())
+        with open(self.results_file, mode, newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(
+                f, fieldnames=self._results_fieldnames, extrasaction='ignore'
+            )
+            if iepoch == 0:
+                writer.writeheader()
+            writer.writerow(row)
 
         # save curve
         plots_path = os.path.join(output_path, 'plots', f'epoch{iepoch}')

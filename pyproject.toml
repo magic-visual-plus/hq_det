@@ -20,6 +20,7 @@ dependencies = [
     "faster-coco-eval",
     "loguru",
     "supervision",
+    "ultralytics==8.4.7",
     "peft<=0.15.2",
     "fairscale",
 ]

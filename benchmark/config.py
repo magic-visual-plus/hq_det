@@ -136,3 +136,36 @@ def get_yolo_config(data_path, model_path, output_path, eval_class_names = [], b
         eval_class_names=eval_class_names,
         gradient_update_interval=1,
     )
+
+
+def get_yolo26_config(data_path, model_path=None, output_path="output", eval_class_names = [], batch_size = None, scale="n"):
+    from hq_det.tools.train_yolo import YoloTrainerArguments
+
+    model_argument = {
+        "scale": scale,
+        "pretrained": model_path is None,
+    }
+    if model_path is not None:
+        model_argument["model"] = model_path
+
+    return YoloTrainerArguments(
+        data_path=data_path,
+        num_epoches=100,
+        warmup_epochs=3.0,
+        num_data_workers=8,
+        lr0=0.01,
+        lr_min=1e-4,
+        lrf=0.01,
+        optimizer="auto",
+        lr_backbone_mult=1,
+        batch_size=batch_size if batch_size is not None else 4,
+        checkpoint_path=output_path,
+        output_path=output_path,
+        checkpoint_interval=1,
+        image_size=1024,
+        model_argument=model_argument,
+        eval_class_names=eval_class_names,
+        gradient_update_interval=1,
+        use_ema=True,
+        enable_amp=True,
+    )
