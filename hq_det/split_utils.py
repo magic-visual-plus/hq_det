@@ -48,21 +48,28 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=9999, add_glob
         
         stride = stride - shift
         for i in range(0, img.shape[0], stride):
-            if (i + shift) >= img.shape[0]:
+            if i >= h:
                 break
+
+            if i + stride + shift > h:
+                i = max(h - stride - shift, 0)
+                pass
+
+            starty = i
+            endy = i + stride + shift
+
+            endy = min(endy, h)
+
             for j in range(0, img.shape[1], stride):
-                if (j + shift) >= img.shape[1]:
+                if j + stride + shift > w:
+                    j = max(w - stride - shift, 0)
+
+                if j >= w:
                     break
-
-                if i + stride > h:
-                    i = max(h - stride, 0)
-                if j + stride > w:
-                    j = max(w - stride, 0)
-
                 startx = j
                 endx = j + stride + shift
-                starty = i
-                endy = i + stride + shift
+
+                endx = min(endx, w)
 
                 # check if any box is in the current split
                 # calculate intersection of box and window
@@ -97,9 +104,13 @@ def split_image(img, boxes, cls, stride=1024, shift=20, max_split=9999, add_glob
 
                 sub_img = img[starty:endy, startx:endx]
                 splits.append((sub_img, sub_boxes, sub_cls, startx, starty))
+
+                if endx == w:
+                    break
                 pass
 
-
+            if endy == h:
+                break
             pass
 
         return splits
