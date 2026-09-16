@@ -32,3 +32,4 @@ exclude = ["tests"]
 
 [tool.setuptools.package-data]
 hq_det = ["**/*.yml", "*.yml"]
+"hq_det.models.pointdino" = ["README.md", "LICENSE"]
