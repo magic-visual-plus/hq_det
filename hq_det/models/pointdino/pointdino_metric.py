@@ -15,8 +15,8 @@ class PointDINOMetric(BaseMetric):
     """Evaluate point detections at pixel-distance thresholds.
 
     Predictions and ground truth must use the same image coordinate system.
-    The supplied test pipeline loads original point annotations after image
-    resizing, matching the head's default ``rescale=True`` predictions.
+    Images use their native size by default. With explicit resizing, the test
+    pipeline keeps original GT coordinates to match ``rescale=True`` predictions.
 
     Matching first maximizes the number of pairs within a distance threshold,
     then minimizes their Euclidean distance. This preserves the source metric.
@@ -25,7 +25,7 @@ class PointDINOMetric(BaseMetric):
     default_prefix = 'point'
 
     def __init__(self,
-                 distance_thresholds=(4.0, 8.0),
+                 distance_thresholds=(5.0, 10.0),
                  score_threshold: float = 0.5,
                  collect_device: str = 'cpu',
                  prefix: Optional[str] = None) -> None:

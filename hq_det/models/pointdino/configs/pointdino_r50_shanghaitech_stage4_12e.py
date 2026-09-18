@@ -89,7 +89,7 @@ model = dict(
         # Preserve the source's detached raw-MSE diagnostic.
         debug=True))
 
-data_root = 'data/shanghaitech_part_b/'
+data_root = 'data/pointdino/'
 
 train_pipeline = [
     dict(type='LoadImageFromFile'),
@@ -125,8 +125,8 @@ train_dataloader = dict(
     dataset=dict(
         type='BaseDetDataset',
         data_root=data_root,
-        ann_file='train_point.json',
-        data_prefix=dict(img_path='train_data/images/'),
+        ann_file='train/_annotations.coco.json',
+        data_prefix=dict(img_path='train/'),
         pipeline=train_pipeline))
 
 val_dataloader = dict(
@@ -138,8 +138,8 @@ val_dataloader = dict(
     dataset=dict(
         type='BaseDetDataset',
         data_root=data_root,
-        ann_file='test_point.json',
-        data_prefix=dict(img_path='test_data/images/'),
+        ann_file='valid/_annotations.coco.json',
+        data_prefix=dict(img_path='valid/'),
         test_mode=True,
         pipeline=test_pipeline))
 test_dataloader = val_dataloader

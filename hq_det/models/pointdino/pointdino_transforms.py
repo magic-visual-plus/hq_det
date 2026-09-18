@@ -49,6 +49,10 @@ class PointDINOPackDetInputs(PackDetInputs):
         'gt_points': 'points',
     }
 
+    def transform(self, results):
+        results.setdefault('scale_factor', (1.0, 1.0))
+        return super().transform(results)
+
 
 @TRANSFORMS.register_module()
 class PointDINOResize(Resize):

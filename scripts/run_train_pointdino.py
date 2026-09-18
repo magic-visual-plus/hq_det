@@ -8,28 +8,21 @@ from pathlib import Path
 import sys
 
 
-from hq_det.tools import pointdino
-
-import torch
-_original_load = torch.load
-def _patched_load(*args, **kwargs):
-    kwargs['weights_only'] = False
-    return _original_load(*args, **kwargs)
-torch.load = _patched_load
+from hq_det.tools import pointdino, train_pointdino
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # 和 run_train_dino.py 相同，在此集中配置一次训练。
 # 更换数据集主要修改 data_path、ann_file、image_dir；参见 POINTDINO_DATA_FORMAT.md。
 TRAINING = dict(
-    data_path=REPO_ROOT / 'data' / 'shanghaitech_part_b',
+    data_path=REPO_ROOT / 'data' / 'pointdino',
     output_path=REPO_ROOT / 'output' / 'pointdino_2',
-    load_checkpoint=REPO_ROOT.parent / 'point_dino_stage2_step2_init.pth',
-    train_ann_file='annotations/train.json',
-    val_ann_file='annotations/val.json',
-    train_image_dir='images/train',
-    val_image_dir='images/val',
-    class_names=None,              # 自动读取 JSON metainfo.classes，各 split 顺序相同
+    load_checkpoint=REPO_ROOT.parent / 'point_dino_stage2_step2_init.pth',  # 单类初始化权重
+    train_ann_file='train/_annotations.coco.json',
+    val_ann_file='valid/_annotations.coco.json',
+    train_image_dir='train',
+    val_image_dir='valid',
+    class_names=None,              # 从 categories 读取；annotation 使用 point: [x, y]
     num_epoches=100,
     lr0=1e-4,
     lr_backbone_mult=0.1,
@@ -61,7 +54,7 @@ def main(argv=None):
         settings['data_path'] = args[0]
     if len(args) == 2:
         settings['load_checkpoint'] = args[1]
-    return pointdino.run(**settings)
+    return train_pointdino.run(**settings)
 
 
 if __name__ == '__main__':

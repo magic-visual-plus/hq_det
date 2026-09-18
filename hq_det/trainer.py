@@ -6,7 +6,6 @@ from . import torch_utils
 import torch.utils.data
 import loguru
 import numpy as np
-from . import augment
 from . import evaluate
 from .common import PredictionResult
 from tqdm import tqdm
@@ -116,6 +115,9 @@ class HQTrainer:
 
     def build_train_transforms(self, image_size, p=0.3):
         """get train data augmentation"""
+        # Point trainers override this method and do not use imgaug.
+        from . import augment
+
         transforms = []
         transforms.append(augment.ToNumpy())
         
@@ -170,6 +172,8 @@ class HQTrainer:
 
     def build_valid_transforms(self, image_size):
         """get validation data augmentation"""
+        from . import augment
+
         force_resize = self.args.augment_force_resize
         transforms = []
         transforms.append(augment.ToNumpy())
@@ -629,15 +633,34 @@ class HQTrainer:
         
         return self._early_stopping_counter >= patience
 
+    def _before_training(self) -> None:
+        """Initialize the schedule; subclasses may restore training state here."""
+        self.scheduler.step()
+
+    def _epoch_range(self):
+        return range(self.args.num_epoches + self.args.warmup_epochs)
+
+    def _finish_epoch(self, epoch, train_info, val_info, stat) -> None:
+        """Default detection checkpoint policy, overridable by other tasks."""
+        self._update_training_state(epoch, train_info, val_info, stat.get('mAP', 0.0))
+        if self.is_master():
+            self.save_epoch_result(epoch, stat, self.args.output_path)
+            self._save_best_model(self.model, stat.get('mAP', 0.0))
+        self._save_checkpoint(self.model)
+
+    def _step_epoch_scheduler(self, epoch) -> None:
+        if epoch >= self.args.warmup_epochs:
+            self.scheduler.step()
+
     def run(self) -> None:
         self.setup_training_environment()
 
         """main training process"""
         self.logger.info("Start training...")
-        self.scheduler.step()
+        self._before_training()
         start_time = time.time()
         
-        for i_epoch in range(self.args.num_epoches + self.args.warmup_epochs):
+        for i_epoch in self._epoch_range():
             epoch_start_time = time.time()
             
             # Training process
@@ -663,15 +686,7 @@ class HQTrainer:
             
             self._log_epoch_summary(summary)
             
-            # Update training state
-            self._update_training_state(i_epoch, train_info, val_info, stat.get('mAP', 0.0))
-
-            # Save results and checkpoints
-            if self.is_master():
-                self.save_epoch_result(i_epoch, stat, self.args.output_path)
-                self._save_best_model(self.model, stat.get('mAP', 0.0))
-            
-            self._save_checkpoint(self.model)
+            self._finish_epoch(i_epoch, train_info, val_info, stat)
 
             # Check early stopping
             if self.args.early_stopping and \
@@ -680,9 +695,7 @@ class HQTrainer:
                 break
             
             # Update scheduler
-            if i_epoch >= self.args.warmup_epochs:
-                self.scheduler.step()
-                pass
+            self._step_epoch_scheduler(i_epoch)
             pass
         
         # log training summary
