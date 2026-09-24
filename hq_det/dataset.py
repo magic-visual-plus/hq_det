@@ -137,7 +137,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
     def __len__(self):
         # return 100
         return len(self.ids)
-    
+
     def __getitem__(self, idx):
         """
         Output:
@@ -146,6 +146,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
                     Init type: x0,y0,x1,y1. unnormalized data.
                     Final type: cx,cy,w,h. normalized data. 
         """
+        idx = idx % len(self.ids)
         try:
             img, target_coco = super(CocoDetection, self).__getitem__(idx)
         except:
@@ -285,8 +286,9 @@ class CombinedDataset(Dataset):
         pass
 
     def __len__(self):
-        min_idx = np.argmin([len(d) for d in self.datasets])
-        return sum([int(len(self.datasets[min_idx]) * pp / self.p[min_idx]) for pp in self.p])
+        max_idx = np.argmax([len(d) for d in self.datasets])
+        # max probability dataset must run full, and other datasets are scaled accordingly
+        return sum([int(len(self.datasets[max_idx]) * pp / self.p[max_idx]) for pp in self.p])
     
     def __getitem__(self, idx):
         dataset_idx = np.random.choice(len(self.datasets), p=self.p)
