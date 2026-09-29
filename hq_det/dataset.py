@@ -286,7 +286,7 @@ class CombinedDataset(Dataset):
         pass
 
     def __len__(self):
-        max_idx = np.argmax([len(d) for d in self.datasets])
+        max_idx = np.argmax(self.p)
         # max probability dataset must run full, and other datasets are scaled accordingly
         return sum([int(len(self.datasets[max_idx]) * pp / self.p[max_idx]) for pp in self.p])
     
