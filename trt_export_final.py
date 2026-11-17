@@ -85,9 +85,11 @@ def export_onnx(mm, H, W, out_onnx):
     w.mm = mm
     w.mm_extract_feat = mm.extract_feat  # plain attr; called inside forward
     img = torch.randn(1, 3, H, W, device="cuda")
-    torch.onnx.export(w, (img,), out_onnx, input_names=["img"],
-                      output_names=["hidden_states", "references"],
-                      opset_version=17, do_constant_folding=True)
+    with torch.no_grad():
+        torch.onnx.export(w, (img,), out_onnx, input_names=["img"],
+                          output_names=["hidden_states", "references"],
+                          opset_version=17, do_constant_folding=True)
+        torch.cuda.empty_cache()
     print(f"ONNX_OK {out_onnx} ({os.path.getsize(out_onnx)/1e6:.0f}MB)", flush=True)
 
 def build_plan(onnx_path, plan_path, precision="fp32"):
