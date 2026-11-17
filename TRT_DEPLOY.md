@@ -119,21 +119,32 @@ async def infer(image_path, conf=0.3):
 
 ## 3. 测试指标
 
-RTX 4090, batch=1, fp32 引擎，端到端检测对拍（IoU≥0.5 + 同类别匹配，检测数量/类别/框 IoU>0.99 完全一致）：
+RTX 4090, batch=1, 真实产线图（5120×5120），端到端检测对拍（IoU≥0.5 + 同类别，
+检测数量/类别/框 IoU>0.99 完全一致）。eager 基线 = 原始模型（mmcv CUDA MDA 算子路径，
+无导出补丁——见 §4 坑 6，性能基线禁止用补丁版 eager）。
 
-| 模型 | 输入 | eager（原始 CUDA 算子路径） | TRT fp32 | TRT fp16 | score 最大偏差 (fp32/fp16) |
+| 模型 | eager | TRT fp32 | TRT fp16 | 最终推荐配置 | 推荐 vs eager |
 |---|---|---|---|---|---|
-| model A（Swin-T，25 类，48M） | 2048×2048 | 39.6ms | 29.7ms（**1.33x**） | 15.0ms（**2.64x**） | 0.0012 / 0.0020 |
-| model B（Swin-L，25 类，~200M） | 2048×2048 | 168.1ms | 266.0ms（**0.63x，更慢**） | 172.1ms（1.02x，持平） | 0.0010 / 0.0053 |
+| model A（Swin-T，48M） | 39.6ms | 29.7ms | 15.0ms | fp32/fp16 + `--msda fallback` | **fp16 2.64x** |
+| model B（Swin-L，~200M） | 168.1ms | 161.6ms | **87.6ms** | `--precisions fp16 --msda batched` | **fp16 1.92x** |
+
+score 最大偏差：A fp32 0.0031 / fp16 0.0020（batched）；B fp32 0.0015 / fp16 0.0060（batched）。
+交叉验证：同方法在 4090D 上 eager 172.4ms / 本机 4090 168.1ms（器件差 2.5%，互相印证）。
+
+### `--msda` 两种导出模式的取舍
+
+- `fallback`（默认）：逐 level grid_sample 展开——**Swin-T 级模型用这个**（MDA 占比小，
+  展开算子不构成瓶颈，且省去 pad/cat 开销）
+- `batched`：全部 level 融合成一次 grid_sample（pad 到最大形状 + 归一化坐标重映射）——
+  **Swin-L 级模型必须用这个**（fallback 展开的数百个小算子在 TRT 里完全抵消卷积收益：
+  fp32 0.63x / fp16 1.02x；batched 后 fp16 1.92x）
+- 数值：batched 与 fallback 对拍等价（diff ~1e-5，坐标重映射舍入级）
 
 ### 适用性结论
 
-- **Swin-T 级模型：推荐 TRT fp16**（2.64x，精度 diff 0.002，产线可用）
-- **Swin-L 级模型：现阶段不推荐 TRT**——原始 eager（mmcv 编译的 MDA CUDA 算子）就是最优解；
-  python fallback 版引擎在 transformer 占比高的模型上完全抵消卷积收益
-- 两个模型都能加速的路径：**MDA TRT plugin**（mmdeploy 有现成 MultiScaleDeformableAttention
-  plugin 实现），预估 Swin-L 整体 1.5~2.5x，工作量 1-2 天——待做
-- 交叉验证：同方法在 4090D 上 eager 172.4ms / 本机 4090 168.1ms（器件差 2.5%，互相印证）
+- 两个尺寸级别现在都有真实加速路径（见上表"推荐配置"列）
+- 如需进一步提速 Swin-L：MDA C++ TRT plugin（mmdeploy 路线同样基于 GridSample，
+  收益预期有限）；下一个值得评估的方向是 FP16 + int8 校准
 
 ## 4. 原理与坑（为什么这么做）
 

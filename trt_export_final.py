@@ -28,14 +28,51 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-def apply_export_patches():
+def apply_export_patches(msda_mode="fallback"):
+    """msda_mode: 'fallback' = per-level python impl (verified baseline);
+    'batched' = single fused grid_sample over levels (fewer ONNX/TRT nodes)."""
     import mmcv.ops.multi_scale_deform_attn as msda
-    class _PyMSDAFn:
-        @staticmethod
-        def apply(value, value_spatial_shapes, level_start_index,
-                  sampling_locations, attention_weights, im2col_step=None):
-            return msda.multi_scale_deformable_attn_pytorch(
-                value, value_spatial_shapes, sampling_locations, attention_weights)
+    import torch.nn.functional as _F
+    if msda_mode == "fallback":
+        class _PyMSDAFn:
+            @staticmethod
+            def apply(value, value_spatial_shapes, level_start_index,
+                      sampling_locations, attention_weights, im2col_step=None):
+                return msda.multi_scale_deformable_attn_pytorch(
+                    value, value_spatial_shapes, sampling_locations, attention_weights)
+    else:
+        def _batched_apply(value, value_spatial_shapes, level_start_index,
+                           sampling_locations, attention_weights):
+            bs, _, num_heads, embed_dims = value.shape
+            _, num_queries, _, num_levels, num_points, _ = sampling_locations.shape
+            value_list = value.split([int(H_ * W_) for H_, W_ in value_spatial_shapes], dim=1)
+            sampling_grids = 2 * sampling_locations - 1
+            shapes = [(int(H_), int(W_)) for H_, W_ in value_spatial_shapes]
+            Hp = max(s[0] for s in shapes); Wp = max(s[1] for s in shapes)
+            vstack, glist = [], []
+            for level, (H_, W_) in enumerate(shapes):
+                v = value_list[level].flatten(2).transpose(1, 2).reshape(bs * num_heads, embed_dims, H_, W_)
+                v = _F.pad(v, (0, Wp - W_, 0, Hp - H_))
+                vstack.append(v)
+                g = sampling_grids[:, :, :, level].transpose(1, 2).flatten(0, 1)
+                g = torch.stack([g[..., 0] * (W_ / Wp) + (W_ - Wp) / Wp,
+                                 g[..., 1] * (H_ / Hp) + (H_ - Hp) / Hp], dim=-1)
+                glist.append(g)
+            value_big = torch.cat(vstack, dim=0)
+            grid_big = torch.cat(glist, dim=0)
+            out = _F.grid_sample(value_big, grid_big, mode="bilinear",
+                                 padding_mode="zeros", align_corners=False)
+            out = out.view(num_levels, bs, num_heads, embed_dims, num_queries, num_points).permute(1, 2, 0, 3, 4, 5)
+            out = out.permute(0, 1, 3, 4, 2, 5).reshape(bs * num_heads, embed_dims, num_queries, num_levels * num_points)
+            attention_weights = attention_weights.transpose(1, 2).reshape(bs * num_heads, 1, num_queries, num_levels * num_points)
+            output = (out * attention_weights).sum(-1).view(bs, num_heads * embed_dims, num_queries)
+            return output.transpose(1, 2).contiguous()
+        class _PyMSDAFn:
+            @staticmethod
+            def apply(value, value_spatial_shapes, level_start_index,
+                      sampling_locations, attention_weights, im2col_step=None):
+                return _batched_apply(value, value_spatial_shapes, level_start_index,
+                                      sampling_locations, attention_weights)
     msda.MultiScaleDeformableAttnFunction = _PyMSDAFn
     import fairscale.nn.checkpoint.checkpoint_activations as _fsc
     def _passthrough(original_forward, weak_self, offload_to_cpu, *args, **kwargs):
@@ -212,13 +249,15 @@ def main():
     ap.add_argument("--skip-export", action="store_true", help="reuse existing onnx")
     ap.add_argument("--verify-img", default=None, help="real image for e2e parity check")
     ap.add_argument("--skip-verify", action="store_true")
+    ap.add_argument("--msda", choices=["fallback", "batched"], default="fallback",
+                    help="MDA export flavor; batched = fused single grid_sample")
     ap.add_argument("--precisions", nargs="+", default=["fp32"],
                     choices=["fp32", "fp16"],
                     help="plan precisions to build (fp16 verified: 4.8x speed, "
                          "max score diff 0.002 on real image)")
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
-    apply_export_patches()
+    apply_export_patches(msda_mode=args.msda)
     model, mm = build_model(args.ckpt)
     stem = os.path.splitext(os.path.basename(args.ckpt))[0]
     for shape in args.shapes:
