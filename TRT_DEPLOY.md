@@ -123,13 +123,14 @@ RTX 4090, batch=1, 真实产线图（5120×5120），端到端检测对拍（IoU
 检测数量/类别/框 IoU>0.99 完全一致）。eager 基线 = 原始模型（mmcv CUDA MDA 算子路径，
 无导出补丁——见 §4 坑 6，性能基线禁止用补丁版 eager）。
 
-| 模型 | eager | TRT fp32 | TRT fp16 | 最终推荐配置 | 推荐 vs eager |
+| 模型 | eager | TRT fp32 (fallback) | TRT fp16 (fallback) | TRT fp32 (batched) | TRT fp16 (batched) |
 |---|---|---|---|---|---|
-| model A（Swin-T，48M） | 39.6ms | 29.7ms | 15.0ms | fp32/fp16 + `--msda fallback` | **fp16 2.64x** |
-| model B（Swin-L，~200M） | 168.1ms | 161.6ms | **87.6ms** | `--precisions fp16 --msda batched` | **fp16 1.92x** |
+| model A（Swin-T，48M） | 39.6ms | 29.7ms（**1.33x**）/ diff 0.0012 | **15.0ms（2.64x）** / diff 0.0020 | 31.9ms（1.24x）/ diff 0.0031 | 16.9ms（2.34x）/ diff 0.0020 |
+| model B（Swin-L，~200M） | 168.1ms | 266.0ms（0.63x）/ diff 0.0010 | 172.1ms（1.02x）/ diff 0.0053 | **161.6ms（1.04x）** / diff 0.0015 | **87.6ms（1.92x）** / diff 0.0060 |
 
-score 最大偏差：A fp32 0.0031 / fp16 0.0020（batched）；B fp32 0.0015 / fp16 0.0060（batched）。
-交叉验证：同方法在 4090D 上 eager 172.4ms / 本机 4090 168.1ms（器件差 2.5%，互相印证）。
+- score 最大偏差 = 端到端检测对拍中匹配框的 score 绝对差最大值（全部检测 IoU>0.99、类别一致）
+- **选型**：Swin-T 级 → fp16 + `--msda fallback`（2.64x）；Swin-L 级 → fp16 + `--msda batched`（1.92x）；
+  高精度保底场景 fp32：A 用 fallback（1.33x），B 用 batched（1.04x）
 
 ### `--msda` 两种导出模式的取舍
 
