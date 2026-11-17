@@ -126,6 +126,5 @@ TRT plugin（mmdeploy 有现成实现），encoder/decoder 预计可再提速 3-
 
 | 文件 | 说明 |
 |---|---|
-| `trt_export_final.py` | 一键转换工具（本文档 §2） |
-| `baseline_speed.py` | eager 基线测速（端到端 + 分段） |
+| `trt_export_final.py` | 一键转换工具（本文档 §2，含对拍与测速） |
 | `build_mmcv.sh` | mmcv 源码编译（§1.2） |
