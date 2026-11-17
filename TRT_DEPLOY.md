@@ -86,6 +86,36 @@ Swin 的窗口 pad 是动态操作，ONNX 只能固定形状导出。因此：
 - 形状不匹配时引擎不报错但输出垃圾（实测踩过：1536×2048 plan 喂 2048×2048 图 → 0 检测）
 - 上线前务必用 `--verify-img` 对拍确认
 
+### 2.4 服务化（WS 常驻服务）
+
+`trt_serve.py` 把 TRT 引擎包成 websocket 常驻服务（单实例绑定一个 ckpt + plan + 形状）：
+
+```bash
+python trt_serve.py --ckpt /path/to/model.pth \
+    --plan trt_out/model_2048x2048_fp32.plan \
+    --shape 2048x2048 --port 8900
+```
+
+客户端协议（JSON over websocket）：
+
+```python
+import asyncio, base64, json, websockets
+
+async def infer(image_path, conf=0.3):
+    b64 = base64.b64encode(open(image_path, "rb").read()).decode()
+    async with websockets.connect("ws://<host>:8900", max_size=64 << 20) as ws:
+        await ws.send(json.dumps({"image_b64": b64, "confidence": conf}))
+        return json.loads(await ws.recv())
+# resp = {"detections": [{"bbox": [x1,y1,x2,y2], "score": .., "label": ".."}],
+#         "time_ms": {"engine": .., "decode": .., "total": ..}, "error": null}
+# bbox 为原始图片像素坐标（服务端已做 scale-back 与裁剪）
+```
+
+- 任意尺寸图片均可发：服务端等比 resize 到 max 边并 pad 到 plan 形状，pad 区域不产生检测
+- 客户端示例见 `ws_client.py`
+- 实测（4090，demo 图，WS 往返含 base64/resize/引擎/解码）：热身 **34~35ms/次**
+- 与 phi_lerobot 的 policy_server 不同：检测服务不依赖 lerobot 栈，纯 websocket+JSON
+
 ## 3. 测试指标
 
 RTX 4090, batch=1, fp32 引擎，端到端检测对拍（IoU≥0.5 + 同类别匹配）：
@@ -127,4 +157,6 @@ TRT plugin（mmdeploy 有现成实现），encoder/decoder 预计可再提速 3-
 | 文件 | 说明 |
 |---|---|
 | `trt_export_final.py` | 一键转换工具（本文档 §2，含对拍与测速） |
+| `trt_serve.py` | WS 常驻推理服务（§2.4） |
+| `ws_client.py` | 服务客户端示例 |
 | `build_mmcv.sh` | mmcv 源码编译（§1.2） |
