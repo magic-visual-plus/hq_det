@@ -2,6 +2,7 @@
 
 > 适用范围：本仓库 `hq_det/models/dino2`（mmdet DINO + ResizeSwin 两阶段检测器）。
 > 已在 RTX 4090（CUDA 12.8 / TensorRT 10.13）上完成两个模型的转换与验证（见"测试指标"）。
+> **适用性结论先行**：Swin-T 级模型 TRT fp16 真实加速 2.64x，推荐；Swin-L 级模型现阶段无加速，不推荐（见 §3）。
 > 维护：TRT 转换问题优先看文末"原理与坑"，大部分问题都踩过。
 
 ## 1. 环境准备
@@ -118,18 +119,21 @@ async def infer(image_path, conf=0.3):
 
 ## 3. 测试指标
 
-RTX 4090, batch=1, fp32 引擎，端到端检测对拍（IoU≥0.5 + 同类别匹配）：
+RTX 4090, batch=1, fp32 引擎，端到端检测对拍（IoU≥0.5 + 同类别匹配，检测数量/类别/框 IoU>0.99 完全一致）：
 
-| 模型 | 输入 | eager | TRT fp32 | 提速 | TRT fp16 | fp16 提速 | score 最大偏差 (fp32/fp16) |
-|---|---|---|---|---|---|---|---|
-| model A（Swin-T，25 类） | 2048×2048 | 72.2ms | 29.7ms | **2.43x** | 15.0ms | **4.81x** | 0.0012 / 0.0020 |
-| model B（Swin-B，TrashCan 系） | 2048×2048 | 334.3ms | 266.0ms | 1.26x | 172.1ms | **1.94x** | 0.0010 / 0.0053 |
+| 模型 | 输入 | eager（原始 CUDA 算子路径） | TRT fp32 | TRT fp16 | score 最大偏差 (fp32/fp16) |
+|---|---|---|---|---|---|
+| model A（Swin-T，25 类，48M） | 2048×2048 | 39.6ms | 29.7ms（**1.33x**） | 15.0ms（**2.64x**） | 0.0012 / 0.0020 |
+| model B（Swin-L，25 类，~200M） | 2048×2048 | 168.1ms | 266.0ms（**0.63x，更慢**） | 172.1ms（1.02x，持平） | 0.0010 / 0.0053 |
 
-对拍均在真实产线图片上进行，检测数量、类别、框（IoU>0.99）完全一致。
+### 适用性结论
 
-**结论**：Swin-T 级模型 fp16 收益显著；Swin-B 级模型因 transformer（可变形注意力）
-占比高，fp32 收益有限，fp16 仍有 1.94x。如需更快：多尺度可变形注意力换成
-TRT plugin（mmdeploy 有现成实现），encoder/decoder 预计可再提速 3-5x。
+- **Swin-T 级模型：推荐 TRT fp16**（2.64x，精度 diff 0.002，产线可用）
+- **Swin-L 级模型：现阶段不推荐 TRT**——原始 eager（mmcv 编译的 MDA CUDA 算子）就是最优解；
+  python fallback 版引擎在 transformer 占比高的模型上完全抵消卷积收益
+- 两个模型都能加速的路径：**MDA TRT plugin**（mmdeploy 有现成 MultiScaleDeformableAttention
+  plugin 实现），预估 Swin-L 整体 1.5~2.5x，工作量 1-2 天——待做
+- 交叉验证：同方法在 4090D 上 eager 172.4ms / 本机 4090 168.1ms（器件差 2.5%，互相印证）
 
 ## 4. 原理与坑（为什么这么做）
 
@@ -151,6 +155,12 @@ TRT plugin（mmdeploy 有现成实现），encoder/decoder 预计可再提速 3-
 5. **分段二分定位是排障利器**
    extract_feat / pre_transformer+encoder / pre_decoder / decoder 逐段导出
    对拍，能在一次运行内锁定第一处发散点。
+6. **性能基线污染（本项目最大教训）**
+   为 ONNX 对拍打的 eager 补丁（CUDA MDA 算子 → python fallback）会把 eager
+   拖慢约 2 倍（Swin-L：真实 168ms vs 被污染 345ms）。曾据此错误上报
+   "2.43x / 4.81x 加速"，后用同事在 4090D 上的产线数据（172ms）交叉验证才
+   发现。**对拍参考与性能基线必须分开测**：对拍用补丁版 eager（语义对齐
+   ONNX），性能基线用原始路径（无补丁）。
 
 ## 5. 产物清单（本分支）
 
