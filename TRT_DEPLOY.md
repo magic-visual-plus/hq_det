@@ -2,7 +2,7 @@
 
 > 适用范围：本仓库 `hq_det/models/dino2`（mmdet DINO + ResizeSwin 两阶段检测器）。
 > 已在 RTX 4090（CUDA 12.8 / TensorRT 10.13）上完成两个模型的转换与验证（见"测试指标"）。
-> **适用性结论先行**：Swin-T 级模型 TRT fp16 真实加速 2.64x，推荐；Swin-L 级模型现阶段无加速，不推荐（见 §3）。
+> **适用性结论先行**：Swin-T 级模型 TRT fp16 加速 2.64x（`--msda fallback`）；Swin-L 级模型 TRT fp16 加速 1.92x（`--msda batched`）——两个尺寸级别均有真实加速路径（见 §3）。
 > 维护：TRT 转换问题优先看文末"原理与坑"，大部分问题都踩过。
 
 ## 1. 环境准备
