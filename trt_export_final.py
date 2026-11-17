@@ -249,15 +249,33 @@ def main():
     ap.add_argument("--skip-export", action="store_true", help="reuse existing onnx")
     ap.add_argument("--verify-img", default=None, help="real image for e2e parity check")
     ap.add_argument("--skip-verify", action="store_true")
-    ap.add_argument("--msda", choices=["fallback", "batched"], default="fallback",
-                    help="MDA export flavor; batched = fused single grid_sample")
+    ap.add_argument("--msda", choices=["auto", "fallback", "batched"], default="auto",
+                    help="MDA export flavor. auto (default): pick by backbone size "
+                         "(embed_dims>=128 -> batched, else fallback). "
+                         "batched = fused single grid_sample (Swin-L level); "
+                         "fallback = per-level expand (Swin-T level)")
     ap.add_argument("--precisions", nargs="+", default=["fp32"],
                     choices=["fp32", "fp16"],
                     help="plan precisions to build (fp16 verified: 4.8x speed, "
                          "max score diff 0.002 on real image)")
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
-    apply_export_patches(msda_mode=args.msda)
+    msda_mode = args.msda
+    if msda_mode == "auto":
+        from mmengine import Config
+        bc = None
+        data = torch.load(args.ckpt, map_location="cpu", weights_only=False)
+        mc = data.get("model_config") if isinstance(data, dict) else None
+        if mc is not None:
+            try:
+                bc = mc.get("backbone", {})
+            except Exception:
+                bc = None
+        embed = int(bc.get("embed_dims", 0)) if bc else 0
+        msda_mode = "batched" if embed >= 128 else "fallback"
+        print(f"AUTO_MSDA: backbone.embed_dims={embed} -> {msda_mode}", flush=True)
+        del data
+    apply_export_patches(msda_mode=msda_mode)
     model, mm = build_model(args.ckpt)
     stem = os.path.splitext(os.path.basename(args.ckpt))[0]
     for shape in args.shapes:
