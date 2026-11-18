@@ -132,6 +132,17 @@ RTX 4090, batch=1, 真实产线图（5120×5120），端到端检测对拍（IoU
 - **选型**：Swin-T 级 → fp16 + `--msda fallback`（2.64x）；Swin-L 级 → fp16 + `--msda batched`（1.92x）；
   高精度保底场景 fp32：A 用 fallback（1.33x），B 用 batched（1.04x）
 
+### 3090（sm_86）复测——plan 需按目标架构重新 build，ONNX 可直接复用
+
+| 模型 | eager | TRT fp32 | TRT fp16 | fp16 提速 |
+|---|---|---|---|---|
+| model A（Swin-T） | 77.5ms | 58.4ms | 31.6ms | **2.45x** |
+| model B（Swin-L） | 304.4ms | 357.2ms | 202.4ms | **1.50x** |
+
+- 精度与 4090 同级（A 3/3 diff 0.0054/0.0020；B 4/4 diff 0.0009/0.0055）
+- 3090 ≈ 4090 的 43~47%（与 FP16 tensor core 算力比一致）
+- 3090 的 TRT fp16 比同模型 4090 原始 eager 还快（31.6ms < 39.6ms）——旧卡+TRT 可追平新卡+torch
+
 ### `--msda` 两种导出模式的取舍
 
 - `fallback`（默认）：逐 level grid_sample 展开——**Swin-T 级模型用这个**（MDA 占比小，
