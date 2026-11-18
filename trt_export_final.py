@@ -79,19 +79,19 @@ def apply_export_patches(msda_mode="fallback"):
         return original_forward(weak_self(), *args, **kwargs)
     _fsc._checkpointed_forward = _passthrough
 
-def build_model(ckpt):
+def build_model(ckpt, device="cuda:0"):
     from hq_det.models.dino2 import hq_dino
     model = hq_dino.HQDINO(model=ckpt)
     model.load_model(ckpt)
     model.eval()
-    model.to("cuda:0")
+    model.to(device)
     mm = model.model
     for m in mm.modules():
         if hasattr(m, "with_cp") and getattr(m, "with_cp"):
             m.with_cp = False
     return model, mm
 
-def export_onnx(mm, H, W, out_onnx):
+def export_onnx(mm, H, W, out_onnx, batch=1):
     from mmengine.structures import InstanceData
     from mmdet.structures import DetDataSample
     pp = mm.data_preprocessor
@@ -121,7 +121,8 @@ def export_onnx(mm, H, W, out_onnx):
     w = Wrapper().eval().cuda()
     w.mm = mm
     w.mm_extract_feat = mm.extract_feat  # plain attr; called inside forward
-    img = torch.randn(1, 3, H, W, device="cuda")
+    dev = next(mm.parameters()).device
+    img = torch.randn(batch, 3, H, W, device=dev)
     with torch.no_grad():
         torch.onnx.export(w, (img,), out_onnx, input_names=["img"],
                           output_names=["hidden_states", "references"],
@@ -245,10 +246,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--shapes", nargs="+", required=True, help="HxW, e.g. 2048x2048")
+    ap.add_argument("--batch", type=int, default=1, help="fixed batch dim of exported onnx/plan")
     ap.add_argument("--outdir", default="./trt_out")
     ap.add_argument("--skip-export", action="store_true", help="reuse existing onnx")
     ap.add_argument("--verify-img", default=None, help="real image for e2e parity check")
     ap.add_argument("--skip-verify", action="store_true")
+    ap.add_argument("--export-device", default="cuda", choices=["cuda", "cpu"],
+                    help="device for ONNX tracing (cpu avoids OOM on large models w/ big batch)")
     ap.add_argument("--msda", choices=["auto", "fallback", "batched"], default="auto",
                     help="MDA export flavor. auto (default): pick by backbone size "
                          "(embed_dims>=128 -> batched, else fallback). "
@@ -276,15 +280,16 @@ def main():
         print(f"AUTO_MSDA: backbone.embed_dims={embed} -> {msda_mode}", flush=True)
         del data
     apply_export_patches(msda_mode=msda_mode)
-    model, mm = build_model(args.ckpt)
+    model, mm = build_model(args.ckpt, device=args.export_device)
     stem = os.path.splitext(os.path.basename(args.ckpt))[0]
     for shape in args.shapes:
         H, W = (int(v) for v in shape.lower().split("x"))
         onnx_path = f"{args.outdir}/{stem}_{H}x{W}.onnx"
         if not (args.skip_export and os.path.exists(onnx_path)):
-            export_onnx(mm, H, W, onnx_path)
+            export_onnx(mm, H, W, onnx_path, batch=args.batch)
+        btag = f"_b{args.batch}" if args.batch != 1 else ""
         for precision in args.precisions:
-            plan_path = f"{args.outdir}/{stem}_{H}x{W}_{precision}.plan"
+            plan_path = f"{args.outdir}/{stem}_{H}x{W}{btag}_{precision}.plan"
             build_plan(onnx_path, plan_path, precision)
             if not args.skip_verify:
                 verify_e2e(model, mm, plan_path, H, W, args.verify_img)
