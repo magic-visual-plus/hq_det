@@ -155,8 +155,28 @@ RTX 4090, batch=1, 真实产线图（5120×5120），端到端检测对拍（IoU
 ### 适用性结论
 
 - 两个尺寸级别现在都有真实加速路径（见上表"推荐配置"列）
-- 如需进一步提速 Swin-L：MDA C++ TRT plugin（mmdeploy 路线同样基于 GridSample，
-  收益预期有限）；下一个值得评估的方向是 FP16 + int8 校准
+- 如需进一步提速 Swin-L：下一个值得评估的方向是 FP16 + int8 校准
+
+### MDA TRT plugin 路线调查记录（2026-11-18，结论：暂缓）
+
+对 TRT 官方 plugin（`MultiscaleDeformableAttnPlugin_TRT`）做了完整可行性验证：
+
+| 步骤 | 结果 |
+|---|---|
+| TRT 10.13 自带该 plugin（registry 确认，version "1" legacy） | ✅ 免编译 mmdeploy |
+| custom_op + symbolic 导出 plugin 节点（INT32 元数据、4D value、静态 reshape） | ✅ |
+| PARSE_OK / BUILD_OK / 运行 | ✅ |
+| 数值对拍（强受控探针：value=arange、单点权重、指定坐标） | ❌ q 维语义不一致 |
+
+探针发现：plugin 对 q0 的采样与 python 参考完全一致，但 q1 输出错误且
+在不同 locs 配置下输出不变——指向 10.13 中 version "1"（legacy IPluginV2）
+实现或其 ONNX parse 层的 q 维处理问题。已核对 NVIDIA 官方 CUDA kernel 源码
+（索引语义与 mmcv 一致），问题在 plugin 封装层。
+
+**结论**：batched GridSample（本分支方案）已拿到主要收益（Swin-T 2.64x /
+Swin-L 1.92x）；plugin 路线等 mmdeploy 官方适配 TRT 10.x 新接口后再评估。
+调查工件：AutoDL 3090 上 `/root/msda_plugin_step1.py`（单算子验证）、
+`/root/msda_probe2.py`（探针）、`/root/step1_full.log`。
 
 ## 4. 原理与坑（为什么这么做）
 
