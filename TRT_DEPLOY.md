@@ -51,6 +51,8 @@ PYTHONPATH=/home/hq_det python trt_export_final.py \
     --ckpt /path/to/model.pth \
     --shapes 2048x2048 1536x2048 \
     --precisions fp32 fp16 \
+    --batch 4 \
+    --export-device cpu \
     --verify-img /path/to/real.jpg \
     --outdir ./trt_out
 ```
@@ -58,6 +60,12 @@ PYTHONPATH=/home/hq_det python trt_export_final.py \
 参数：
 - `--shapes`：**必须与实际推理输入形状一致**（见 2.3）。可多个。
 - `--precisions`：`fp32`（默认）/ `fp16`，可同时建。
+- `--batch`：固定 batch 维（默认 1）。产线攒批打分时按需设（如 4）。
+  plan 文件名会带 `_b4` 后缀。
+- `--export-device`：ONNX trace 的设备，默认 cuda。**大模型 + batch>1 时
+  建议 cpu**（Swin-L batch=4 在 24G 卡上 trace 会 OOM，CPU 内存充足），
+  只影响导出速度，不影响产物。
+- `--msda`：`auto`（默认，按 backbone.embed_dims 自动选）/ `fallback` / `batched`。
 - `--verify-img`：真实图片做端到端检测对拍（推荐，随机图会让 topk 对比失真）。
 - `--skip-export`：ONNX 已存在时只重建 plan。
 - `--skip-verify`：跳过对拍。
@@ -156,6 +164,12 @@ trace 在 24G 卡上 batch=5 就 OOM。batch 路线到头，换卡决策只看�
 - 显存：两边同为 24G 级，batch 上限一致（Swin-L 上限 ~4）
 
 ### 3090（sm_86）复测——plan 需按目标架构重新 build，ONNX 可直接复用
+
+其他架构的 plan 同理需在目标架构上 build（A100 = sm_80、L40S/4090 = sm_89、
+3090/3080 = sm_86、5090/5080 = sm_120）：ONNX 平台无关可直接复用，
+在目标机器重跑 `--skip-export` 的 build + verify 即可。
+A100（sm_80）实测数据待有环境后补充（TRT 10.13 / torch 2.8 cu128 均支持 sm_80，
+管线无适配工作）。
 
 | 模型 | eager | TRT fp32 | TRT fp16 | fp16 提速 |
 |---|---|---|---|---|
