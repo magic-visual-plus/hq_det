@@ -194,6 +194,33 @@ A100（sm_80）实测数据待有环境后补充（TRT 10.13 / torch 2.8 cu128 �
 - 3090 ≈ 4090 的 43~47%（与 FP16 tensor core 算力比一致）
 - 3090 的 TRT fp16 比同模型 4090 原始 eager 还快（31.6ms < 39.6ms）——旧卡+TRT 可追平新卡+torch
 
+### 4070（sm_89，12G）复测——plan 与驱动版本绑定（不止架构）
+
+环境：驱动 535.230.02（CUDA 12.2），TRT 10.13.3.9（cu12，从 4090 拷贝
+site-packages 离线安装，见 §4 坑 8）。ONNX 直接复用（T=fallback / L=batched，
+与 4090 推荐配置一致），**plan 在目标机本地重 build**（纯 TRT API，无需
+torch/mmcv；Swin-T fp16 ~134s、Swin-L fp16 ~210s）。
+
+| 模型 | TRT fp32 | TRT fp16 | fp16 提速 | fp16 显存 |
+|---|---|---|---|---|
+| model A（Swin-T） | 70.1ms | 37.0ms | **1.89x** | 0.76GB |
+| model B（Swin-L） | 351.0ms | 199.9ms | **1.76x** | 2.36GB |
+
+- 关键坑：**4090（驱动 580）上编译的 plan 在 4070（驱动 535）上不能跑**——
+  myelin kernel JIT 失败（CUDA error 720 launch failure）。同架构 sm_89 +
+  同 TRT 版本也不够，见 §4 坑 7
+- **4070 ≈ 3090**：Swin-L fp16 199.9ms vs 3090 的 202.4ms 打平，Swin-T 反而
+  更慢（37.0 vs 31.6ms）。实测跑满 200W 功耗墙（2700MHz、throttle 0x4），
+  504GB/s 带宽（3090 为 936GB/s）+ 200W（3090 为 350W）抵消了 Ada tensor
+  core 的代际增益。**本负载下 4070 对 3090 无升级价值**（3090 显存 24G、
+  价格更低）；4070 ≈ 4090 的 40~50%
+- **12G 跑 Swin-L 无压力**：fp16 推理峰值 2.36GB、fp32 也只 4.35GB——此前
+  "Swin-L 需要 24G" 实为导出 trace 的临时显存，推理本身很小
+- batch=4 未测：现有 ONNX 导出时 batch 已固化为 1，重导需 torch+mmcv+nvcc
+  环境（4070 无）；batch 对延迟本无收益（compute-bound），暂缓
+- 精度 sanity：输出 finite、absmax 与 4090 一致（5.9/1.0）；端到端 IoU 对拍
+  需 torch 环境，待补
+
 ### `--msda` 两种导出模式的取舍
 
 - `fallback`（默认）：逐 level grid_sample 展开——**Swin-T 级模型用这个**（MDA 占比小，
@@ -255,6 +282,19 @@ Swin-L 1.92x）；plugin 路线等 mmdeploy 官方适配 TRT 10.x 新接口后�
    "2.43x / 4.81x 加速"，后用同事在 4090D 上的产线数据（172ms）交叉验证才
    发现。**对拍参考与性能基线必须分开测**：对拍用补丁版 eager（语义对齐
    ONNX），性能基线用原始路径（无补丁）。
+7. **plan 与驱动版本绑定（比架构绑定更严格）**
+   4090（驱动 580）上编译的 plan 放到 4070（驱动 535）上反序列化成功，但
+   执行时 myelin kernel JIT 失败（CUDA error 720 launch failure）。同架构
+   （sm_89）+ 同 TRT 版本（10.13.3.9）都不够——kernel 对驱动 JIT 能力有
+   要求。**要么在目标机本地 build，要么目标机驱动 ≥ 源机**。
+8. **镜像源装不了 TRT cu12，离线拷贝 site-packages 最省事**
+   aliyun/tuna 的 `tensorrt-cu12` 系列只有 sdist（触发本地编译，失败），
+   `tensorrt` 元包在 10.13+ 会解析到 cu13 变体（CUDA 13 需驱动 ≥580），
+   NVIDIA 官方 pypi 索引 301。可靠做法：从已有机器打包
+   `site-packages/{tensorrt,tensorrt_bindings,tensorrt_libs,nvidia/{cublas,
+   cudnn,cuda_runtime,nvjitlink}}` 直接拷到目标机。注意：bindings 是 abi3
+   但对 Python 版本有上限——3.14 会报 `_PyThreadState_UncheckedGet` 符号
+   移除错误，**用 3.12 稳妥**。
 
 ## 5. 产物清单（本分支）
 
