@@ -104,7 +104,7 @@ def export_onnx(mm, H, W, out_onnx, batch=1):
             self.register_buffer("mean_", mean)
             self.register_buffer("std_", std)
         def forward(self, img):
-            x = (img - self.mean_) / self.std_
+            x = (img - self.mean_.to(img.device)) / self.std_.to(img.device)
             feats = self.mm_extract_feat(x)
             ds = []
             for _ in range(img.shape[0]):
