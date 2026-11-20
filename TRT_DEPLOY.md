@@ -404,3 +404,41 @@ Swin-L 1.92x）；plugin 路线等 mmdeploy 官方适配 TRT 10.x 新接口后�
 | `trt_serve.py` | WS 常驻推理服务（§2.4） |
 | `ws_client.py` | 服务客户端示例 |
 | `build_mmcv.sh` | mmcv 源码编译（§1.2） |
+| `windows_deploy/` | Windows 平台部署全套（见 `windows_deploy/README.md`） |
+
+## 6. Windows 部署实测（magic_fox_ai 平台 + RTX 3090，2026-11-20）
+
+部署形态：Windows 10/11 + 3090 24G（驱动 610.88）+ 平台自带 Python 3.10
+（torch 2.1.1+cu118 / mmdet 3.3.0），TRT 10.13.3.9（bindings/libs 走 NVIDIA
+pypi win_amd64 wheel + `tensorrt.py` shim，见 windows_deploy/README.md §2）。
+plan 在目标卡本地 build（470MB，5 分钟）。服务：HTTP 18901，与 `model_sdk`
+客户端完全兼容（`/api/predict` + `/api/batch_predict`）。
+
+### Windows 3090 性能（5120×5120 产线图，阈值 0.3，200 张业务图）
+
+| 指标 | TRT fp16 b1 | torch eager b1（hq_dino 全前向） |
+|---|---|---|
+| 端到端 p50 | **254ms** | 399ms（TRT 快 1.57x） |
+| 端到端 p90 | 263ms | 408ms |
+| 纯推理 p50 | 198ms（std 13，与 Linux 3090 的 199.5ms 一致） | 369ms（std 50） |
+| 单线程吞吐 | 3.16 req/s | 2.44 req/s |
+
+耗时构成（TRT）：引擎 199ms + head 解码 3ms + base64/HTTP ~55ms。
+同机调用改传 `local_file` 路径可省 base64 开销（~90ms → 总 ~230ms）。
+
+### TRT vs torch 一致性（200 张，106 张有检出，114 匹配对）
+
+- 检出数量完全一致：77% 的图（其余为分数临界框跨越 0.3 阈值的漂移，
+  数量差 max 3）
+- 匹配对分数差：mean 0.046 / p90 0.104 / max 0.248
+- 匹配框 IoU：mean 0.892 / min 0.51
+
+说明：本对比的 torch 侧走 `hq_dino.HQDINO.predict`（自带 resize 管线），
+与 TRT 服务的 resize 实现有轻微几何差异，因此 IoU/score 差异大于 4090
+同管线对拍（IoU>0.99，见 §3）；判定精度可用的依据以 4090 同管线对拍为准，
+Windows 数据用于性能与稳定性评估。
+
+### batch/并发注意
+
+- b1 引擎不支持并发：多线程压测会在服务端排队直至超时，压测一律单线程
+- `ml_main.py` 的 `DETECTION_BATCH_SIZE` 已改为 1（b4 全线劣化结论见 §3 batch 实测）
