@@ -206,6 +206,28 @@ msda 配置与主表一致：T = fallback，L = batched。
 - 3080 b1 从 48.9ms → 34.7ms 的差异来自环境升级（驱动 535→595 + 本地重建
   plan），**旧 3080 数据已过时，以本次为准**
 
+### Windows 3090 显卡 batch 扩展复测（2026-11-20，b1/b2/b4/b8 + 显存）
+
+部署机上用真机图（5120×5120 画布 2048×2048，64 张 × 5 轮）复测 b2/b4，
+补齐显存数据（b8 plan 构建失败，见下）：
+
+| batch | 引擎 p50 | 吞吐 | 显存增量 | 显存峰值 |
+|---|---|---|---|---|
+| b1 | 199ms | 4.49 img/s | +48MB | 8.3GB |
+| b2 | 415ms | 4.32 img/s | +96MB | 9.4GB |
+| b4 | 835ms | 4.30 img/s | +192MB | 12.0GB |
+
+- 延迟严格线性（b2=2.09×b1、b4=4.20×b1），**batch 无摊薄**；吞吐 b1 最高
+- **每 +1 batch 约 +48MB 显存**（权重/激活副本），b4 峰值 12GB
+- b8 ONNX 已导出（922MB），但 3090 上 plan 构建失败（6GB workspace 池
+  上限不够；b8 引擎本身预计可行但按线性趋势无吞吐收益，未再投入）
+- 显存采样注意：trtexec 式 build 过程峰值不含在本表（表为**推理**显存）；
+  build 期 b4 需 ~10GB、b8 需 >12GB workspace（调 `set_memory_pool_limit`）
+- 数据文件：部署机 `C:\deploy\bench_batch_result.json`
+
+**batch 最终结论（三处独立验证一致）**：4090/4080S/3080 Linux、Windows 3090
+部署机全部确认 b1 最优。产线一律 batch=1。
+
 ### 3090 替换 4090 的成本分析（按产线口径：3090+TRT vs 4090+原始 torch）
 
 - 吞吐保留率：3090 TRT fp16 = 4090 原始基线的 **83%**（4.94 vs 5.95 FPS）
@@ -459,4 +481,5 @@ plan 在目标卡本地 build（470MB，5 分钟）。服务：HTTP 18901，与 
 ### batch/并发注意
 
 - b1 引擎不支持并发：多线程压测会在服务端排队直至超时，压测一律单线程
-- `ml_main.py` 的 `DETECTION_BATCH_SIZE` 已改为 1（b4 全线劣化结论见 §3 batch 实测）
+- `ml_main.py` 的 `DETECTION_BATCH_SIZE` 已改为 1（b4 全线劣化结论见 §3 batch 实测
+  与「Windows 3090 显卡 batch 扩展复测」；b2/b4 吞吐均低于 b1，显存每 batch +48MB）
