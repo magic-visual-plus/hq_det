@@ -93,6 +93,7 @@ def infer_bgr_bytes(img_bytes, conf):
     rw, rh = int(ow * rate), int(oh * rate)
     canvas = np.zeros((H, W, 3), dtype=np.uint8)
     canvas[:rh, :rw] = cv2.resize(im, (rw, rh))
+    canvas = cv2.GaussianBlur(canvas, (3, 3), 1.0)  # align with platform hq_dino preprocessing
     img_t = torch.permute(torch.from_numpy(canvas), (2, 0, 1)).contiguous().float().unsqueeze(0).cuda()
     t0 = time.time()
     hidden, refs = engine_run(img_t)
