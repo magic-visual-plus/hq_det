@@ -414,14 +414,14 @@ pypi win_amd64 wheel + `tensorrt.py` shim，见 windows_deploy/README.md §2）�
 plan 在目标卡本地 build（470MB，5 分钟）。服务：HTTP 18901，与 `model_sdk`
 客户端完全兼容（`/api/predict` + `/api/batch_predict`）。
 
-### Windows 3090 性能（5120×5120 产线图，阈值 0.3，200 张业务图）
+### Windows 3090 性能（5120×5120 产线图，阈值 0.3，200 张业务图，管线对齐后）
 
-| 指标 | TRT fp16 b1 | torch eager b1（hq_dino 全前向） |
+| 指标 | TRT fp16 b1 | 平台 torch eager b1 |
 |---|---|---|
-| 端到端 p50 | **254ms** | 399ms（TRT 快 1.57x） |
-| 端到端 p90 | 263ms | 408ms |
-| 纯推理 p50 | 198ms（std 13，与 Linux 3090 的 199.5ms 一致） | 369ms（std 50） |
-| 单线程吞吐 | 3.16 req/s | 2.44 req/s |
+| 端到端 p50 | **252ms** | 293ms（TRT 快 1.4x） |
+| 端到端 p90 | 265ms | 310ms |
+| 纯推理 p50 | **198ms**（std 20，与 Linux 3090 的 199.5ms 一致） | ~370ms |
+| 吞吐 | ~3.9 req/s | ~3.4 req/s |
 
 耗时构成（TRT）：引擎 199ms + head 解码 3ms + base64/HTTP ~55ms。
 同机调用改传 `local_file` 路径可省 base64 开销（~90ms → 总 ~230ms）。
@@ -452,6 +452,9 @@ plan 在目标卡本地 build（470MB，5 分钟）。服务：HTTP 18901，与 
 
 注意：`det03.py` 补丁同时改变了平台 torch eager 对非方形图的行为
 （从"不 pad"变为"pad 方形"，与训练分布一致）——该行为变化本身需业务验收。
+
+部署流程/切流量/新机器复用步骤见 `windows_deploy/README.md`（3080/4080
+同流程，单机约 30~40 分钟，其中 plan 本地构建 2~7 分钟）。
 
 ### batch/并发注意
 
